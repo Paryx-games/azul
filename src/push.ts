@@ -541,7 +541,9 @@ export class PushCommand {
     const byKey = new Map<string, InstanceData>();
 
     for (const instance of instances) {
-      const key = `${instance.path.join("/")}::${instance.className}`;
+      // Keyed by path alone: one Studio path holds one instance, so a Folder
+      // and a script landing on the same path are a collision, not two entries.
+      const key = instance.path.join("/");
       const existing = byKey.get(key);
 
       if (!existing) {
@@ -565,13 +567,17 @@ export class PushCommand {
       const incomingIsScript = this.isScriptClassName(instance.className);
 
       if (existingIsScript && incomingIsScript) {
-        if (
+        if (existing.className !== instance.className) {
+          log.warn(
+            `Rojo push dedupe: conflicting class at ${key} (${existing.className} vs ${instance.className}); keeping first occurrence.`,
+          );
+        } else if (
           typeof existing.source === "string" &&
           typeof instance.source === "string" &&
           existing.source !== instance.source
         ) {
           log.warn(
-            `Rojo push dedupe: conflicting script content at ${instance.path.join("/")} (${instance.className}); keeping first occurrence.`,
+            `Rojo push dedupe: conflicting script content at ${key} (${instance.className}); keeping first occurrence.`,
           );
         }
       }

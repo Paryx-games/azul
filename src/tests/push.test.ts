@@ -217,3 +217,41 @@ test("rojo push without a project JSON imports loose JSON modules", async () => 
   assert.equal(byName.has("Main.meta"), false);
   assert.equal(byName.has("sourcemap"), false);
 });
+
+test("rojo push dedupe collapses a Folder and a script on the same path", () => {
+  const dedupe = (push as any).dedupeRojoInstances.bind(push) as (
+    instances: InstanceData[],
+  ) => InstanceData[];
+
+  const at = (className: string, source?: string): InstanceData =>
+    ({
+      guid: className,
+      className,
+      name: "Shared",
+      path: ["ReplicatedStorage", "Shared"],
+      source,
+    }) as InstanceData;
+
+  // The script wins whichever order the two arrive in
+  assert.deepEqual(
+    dedupe([at("Folder"), at("ModuleScript", "return 1")]).map(
+      (i) => i.className,
+    ),
+    ["ModuleScript"],
+  );
+  assert.deepEqual(
+    dedupe([at("ModuleScript", "return 1"), at("Folder")]).map(
+      (i) => i.className,
+    ),
+    ["ModuleScript"],
+  );
+
+  // Distinct paths are untouched
+  assert.equal(
+    dedupe([
+      at("Folder"),
+      { ...at("ModuleScript", "return 1"), path: ["ReplicatedStorage", "Other"] },
+    ]).length,
+    2,
+  );
+});
