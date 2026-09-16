@@ -200,11 +200,15 @@ test("rojo push without a project JSON imports loose JSON modules", async () => 
   // Meta and sourcemap files carry their own meaning and must not become modules
   fs.writeFileSync(path.join(src, "Main.meta.json"), "{}", "utf8");
   fs.writeFileSync(path.join(src, "sourcemap.json"), "{}", "utf8");
+  // The loose walk applies the builder's default ignores, so VCS metadata stays out
+  fs.mkdirSync(path.join(src, ".git"), { recursive: true });
+  fs.writeFileSync(path.join(src, ".git", "Hook.luau"), "return 1", "utf8");
 
   const instances = await push.buildRojoInstances(["ReplicatedStorage"], src);
   assert.ok(instances);
 
   const byName = new Map(instances.map((i) => [i.name, i]));
+  assert.equal(byName.has("Hook"), false, ".git contents must not be pushed");
 
   const config = byName.get("Config");
   assert.equal(config?.className, "ModuleScript");
@@ -254,4 +258,59 @@ test("rojo push dedupe collapses a Folder and a script on the same path", () => 
     ]).length,
     2,
   );
+});
+
+test("rojo push leaves project-owned directories to the project build", async () => {
+  const tmp = makeTempDir();
+  const pkgs = path.join(tmp, "pkgs");
+
+  // A package carrying its own project file
+  const withProj = path.join(pkgs, "withproj");
+  fs.mkdirSync(path.join(withProj, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(withProj, "src", "Mod.luau"),
+    "return 'mod'",
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(withProj, "default.project.json"),
+    JSON.stringify({
+      name: "Pkg",
+      tree: { $className: "Folder", $path: "src" },
+    }),
+    "utf8",
+  );
+
+  // Loose content beside it, covered by no project
+  fs.mkdirSync(path.join(pkgs, "loose"), { recursive: true });
+  fs.writeFileSync(
+    path.join(pkgs, "loose", "Helper.luau"),
+    "return 'helper'",
+    "utf8",
+  );
+  fs.writeFileSync(path.join(pkgs, "Stray.json"), '{"a":1}', "utf8");
+
+  const instances = await push.buildRojoInstances(["ReplicatedStorage"], pkgs);
+  assert.ok(instances);
+  const paths = instances.map((i) => i.path.join("/"));
+
+  // The project supplies its own subtree, flattened through its $path
+  assert.ok(paths.includes("ReplicatedStorage/withproj/Mod"));
+  // The loose walk supplies everything the project does not cover
+  assert.ok(paths.includes("ReplicatedStorage/loose/Helper"));
+  assert.ok(paths.includes("ReplicatedStorage/Stray"));
+
+  // It must not descend into the project's own directory and re-emit its files
+  assert.equal(
+    paths.some((p) => p.includes("withproj/src")),
+    false,
+    "project-owned directory walked twice",
+  );
+  assert.equal(
+    paths.some((p) => p.endsWith("withproj/default.project")),
+    false,
+    "project file emitted as a JSON module",
+  );
+
+  fs.rmSync(tmp, { recursive: true, force: true });
 });

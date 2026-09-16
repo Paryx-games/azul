@@ -24,6 +24,13 @@ export interface RojoSnapshotOptions {
   destPrefix?: string[];
 }
 
+export interface LooseBuildOptions {
+  /** Directories owned by a project file; their contents are left alone. */
+  skipDirs?: Iterable<string>;
+  /** Instances a project build already emitted, so folders are not laid over them. */
+  existing?: InstanceData[];
+}
+
 /**
  * Builds InstanceData[] from a Rojo-style default.project.json (compat layer).
  */
@@ -42,6 +49,48 @@ export class RojoSnapshotBuilder {
       options.projectFile ?? "default.project.json",
     );
     this.destPrefix = options.destPrefix ?? [];
+  }
+
+  /**
+   * Walks a directory with the same file rules as a project `$path`, for source
+   * trees that no project file covers. Rojo itself serves nothing here, so this
+   * is Azul being deliberately more permissive than Rojo.
+   */
+  public async buildLoose(
+    root: string,
+    destPath: string[],
+    options: LooseBuildOptions = {},
+  ): Promise<InstanceData[]> {
+    // No project to read globIgnorePaths from, so the defaults stand alone
+    this.prepareIgnoreMatchers({ name: "", tree: {} });
+
+    for (const dir of options.skipDirs ?? []) {
+      const rel = path.relative(this.cwd, dir).replace(/\\/g, "/");
+      this.ignoreMatchers.push(
+        this.globToRegex(rel === "" ? "**" : rel),
+        this.globToRegex(rel === "" ? "**" : `${rel}/**`),
+      );
+    }
+
+    for (const instance of options.existing ?? []) {
+      const key = instance.path.join("/");
+      if (instance.className === "Folder") {
+        this.emittedFolders.add(key);
+      } else {
+        this.moduleContainers.add(key);
+      }
+    }
+
+    const results: InstanceData[] = [];
+    await this.walkDirectory(root, destPath, results, new Set());
+
+    for (const instance of results) {
+      if (instance.source) {
+        instance.source = replaceSelfRequires(instance.name, instance.source);
+      }
+    }
+
+    return results;
   }
 
   public async build(): Promise<InstanceData[]> {
@@ -249,7 +298,7 @@ export class RojoSnapshotBuilder {
     }
   }
 
-  public async parseModelFile(
+  private async parseModelFile(
     filePath: string,
     destPath: string[],
   ): Promise<InstanceData[]> {
@@ -735,7 +784,11 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(baseName)) {
           continue;
         }
+        if (this.isOccupied([...destPath, baseName])) {
+          continue;
+        }
 
+        this.moduleContainers.add([...destPath, baseName].join("/"));
         this.ensureFolder(destPath, results);
         const modelInstances = await this.parseModelFile(fullPath, [
           ...destPath,
@@ -786,7 +839,21 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(baseName)) {
           continue;
         }
+        // A same-named script wins; the JSON is that script's data sibling
+        const hasScriptSibling = entries.some(
+          (e) =>
+            e.isFile() &&
+            isScriptFileName(e.name) &&
+            classifyScriptFileName(e.name).scriptName === baseName,
+        );
+        if (hasScriptSibling) {
+          continue;
+        }
+        if (this.isOccupied([...destPath, baseName])) {
+          continue;
+        }
         const source = await this.readJsonModuleSource(fullPath);
+        this.moduleContainers.add([...destPath, baseName].join("/"));
         this.ensureFolder(destPath, results);
         results.push({
           guid: this.makeGuid(),
@@ -807,7 +874,11 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(scriptName)) {
           continue;
         }
+        if (this.isOccupied([...destPath, scriptName])) {
+          continue;
+        }
         const source = await fs.readFile(fullPath, "utf-8");
+        this.moduleContainers.add([...destPath, scriptName].join("/"));
         this.ensureFolder(destPath, results);
         results.push({
           guid: this.makeGuid(),
@@ -818,6 +889,11 @@ export class RojoSnapshotBuilder {
         });
       }
     }
+  }
+
+  /** True when a non-Folder instance already holds this path. */
+  private isOccupied(pathSegments: string[]): boolean {
+    return this.moduleContainers.has(pathSegments.join("/"));
   }
 
   /**
@@ -877,7 +953,7 @@ export class RojoSnapshotBuilder {
    * Rojo turns a plain `.json` file into a ModuleScript returning its contents.
    * Project, model, meta and sourcemap files carry their own meaning instead.
    */
-  public isJsonModuleFile(fileName: string): boolean {
+  private isJsonModuleFile(fileName: string): boolean {
     if (!fileName.endsWith(".json")) return false;
     if (fileName === "sourcemap.json") return false;
     if (fileName.endsWith(".project.json")) return false;
@@ -886,7 +962,7 @@ export class RojoSnapshotBuilder {
     return true;
   }
 
-  public async readJsonModuleSource(filePath: string): Promise<string> {
+  private async readJsonModuleSource(filePath: string): Promise<string> {
     let parsed: unknown;
     try {
       const raw = await fs.readFile(filePath, "utf-8");

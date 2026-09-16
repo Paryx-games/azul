@@ -9,7 +9,6 @@ import { RojoSnapshotBuilder } from "./snapshot/rojo/index.js";
 import { generateGUID } from "./util/id.js";
 import {
   classifyScriptFileName,
-  isInstanceJsonName,
   isScriptFileName,
   replaceSelfRequires,
 } from "./util/scriptFile.js";
@@ -446,13 +445,9 @@ export class PushCommand {
         "No default.project.json found; falling back to loose script import with Rojo-style init module handling.",
       );
 
-      const loose = await this.collectLooseScripts(
-        sourceRoot,
-        destSegments,
-        new Set<string>(),
-        new Set<string>(),
-        new Set<string>(),
-      );
+      const loose = await new RojoSnapshotBuilder({
+        cwd: process.cwd(),
+      }).buildLoose(sourceRoot, destSegments);
 
       log.info(
         `Rojo compatibility imported ${loose.length} loose instance(s) without a project JSON from ${sourceRoot}`,
@@ -505,20 +500,13 @@ export class PushCommand {
     // Emit loose scripts not covered by a Rojo project (e.g., cmdr.lua, janitor.lua, Promise.lua)
     if (sourceRootOpt) {
       const sourceRoot = path.resolve(process.cwd(), sourceRootOpt);
-      const existingFolders = new Set(
-        allInstances
-          .filter((i) => i.className === "Folder")
-          .map((i) => i.path.join("/")),
-      );
-      const existingPaths = new Set(allInstances.map((i) => i.path.join("/")));
 
-      const loose = await this.collectLooseScripts(
-        sourceRoot,
-        destSegments,
-        projectDirs,
-        existingFolders,
-        existingPaths,
-      );
+      const loose = await new RojoSnapshotBuilder({
+        cwd: process.cwd(),
+      }).buildLoose(sourceRoot, destSegments, {
+        skipDirs: projectDirs,
+        existing: allInstances,
+      });
       allInstances.push(...loose);
 
       if (loose.length > 0) {
@@ -941,247 +929,6 @@ export class PushCommand {
     }
 
     return found;
-  }
-
-  private async collectLooseScripts(
-    root: string,
-    destSegments: string[],
-    projectDirs: Set<string>,
-    emittedFolders: Set<string>,
-    emittedPaths: Set<string>,
-  ): Promise<InstanceData[]> {
-    const results: InstanceData[] = [];
-    const looseBuilder = new RojoSnapshotBuilder({ cwd: process.cwd() });
-
-    const walk = async (dir: string, relSegments: string[]) => {
-      // Skip directories already handled by a Rojo project
-      for (const proj of projectDirs) {
-        if (dir === proj || dir.startsWith(proj + path.sep)) {
-          return;
-        }
-      }
-
-      let entries: fs.Dirent[];
-      try {
-        entries = await fsp.readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-
-      entries.sort((a, b) => a.name.localeCompare(b.name));
-
-      // If this directory has an init-like file, treat the directory itself as that script
-      const initCandidates = [
-        "init.lua",
-        "init.luau",
-        "init.server.lua",
-        "init.server.luau",
-        "init.client.lua",
-        "init.client.luau",
-        "init.module.lua",
-        "init.module.luau",
-      ];
-
-      const initEntry = entries.find(
-        (e) => e.isFile() && initCandidates.includes(e.name),
-      );
-
-      const initModelEntry = entries.find(
-        (e) => e.isFile() && e.name === "init.model.json",
-      );
-
-      if (initModelEntry) {
-        const full = path.join(dir, "init.model.json");
-        const destPath = [...destSegments, ...relSegments];
-        const key = destPath.join("/");
-        if (!emittedPaths.has(key)) {
-          this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
-          emittedPaths.add(key);
-          emittedFolders.add(key); // prevent folder emission at this path
-
-          const builder = new RojoSnapshotBuilder({ cwd: process.cwd() });
-          const modelInstances = await builder.parseModelFile(full, destPath);
-          if (modelInstances.length > 0) {
-            const rootInstance = modelInstances[0];
-            if (initEntry) {
-              const scriptClass = classifyScriptFileName(initEntry.name, {
-                stripDisambiguationSuffix: true,
-              }).className;
-              const source = await fsp.readFile(
-                path.join(dir, initEntry.name),
-                "utf-8",
-              );
-              rootInstance.className = scriptClass;
-              rootInstance.source = source;
-            }
-            results.push(...modelInstances);
-          }
-        }
-      } else if (initEntry) {
-        const full = path.join(dir, initEntry.name);
-        const { className } = classifyScriptFileName(initEntry.name, {
-          stripDisambiguationSuffix: true,
-        });
-        const destPath = [...destSegments, ...relSegments];
-        const key = destPath.join("/");
-        if (!emittedPaths.has(key)) {
-          this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
-          emittedPaths.add(key);
-          emittedFolders.add(key); // prevent folder emission at this path
-          results.push({
-            guid: generateGUID(),
-            className,
-            name: destPath[destPath.length - 1] ?? path.basename(dir),
-            path: destPath,
-            source: await fsp.readFile(full, "utf-8"),
-          });
-        }
-      }
-
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await walk(full, [...relSegments, entry.name]);
-          continue;
-        }
-
-        if (initEntry && initEntry.name === entry.name) {
-          continue; // already emitted as the container
-        }
-
-        if (initModelEntry && entry.name === "init.model.json") {
-          continue;
-        }
-
-        if (isInstanceJsonName(entry.name)) {
-          const baseName = entry.name.slice(0, -".model.json".length);
-          const destPath = [...destSegments, ...relSegments, baseName];
-          const key = destPath.join("/");
-          if (emittedPaths.has(key)) continue;
-
-          this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
-          emittedPaths.add(key);
-
-          const builder = new RojoSnapshotBuilder({ cwd: process.cwd() });
-          const modelInstances = await builder.parseModelFile(full, destPath);
-          if (modelInstances.length > 0) {
-            const rootInstance = modelInstances[0];
-            const companionScript = entries.find(
-              (e) =>
-                e.isFile() &&
-                isScriptFileName(e.name) &&
-                classifyScriptFileName(e.name, {
-                  stripDisambiguationSuffix: true,
-                }).scriptName === baseName,
-            );
-            if (companionScript) {
-              const scriptClass = classifyScriptFileName(companionScript.name, {
-                stripDisambiguationSuffix: true,
-              }).className;
-              const source = await fsp.readFile(
-                path.join(dir, companionScript.name),
-                "utf-8",
-              );
-              rootInstance.className = scriptClass;
-              rootInstance.source = source;
-            }
-            results.push(...modelInstances);
-          }
-          continue;
-        }
-
-        // Plain .json files are Rojo JSON modules (ModuleScript returning the data)
-        if (looseBuilder.isJsonModuleFile(entry.name)) {
-          const baseName = path.parse(entry.name).name;
-
-          // A same-named script file wins; the JSON is treated as its data sibling
-          const hasScriptSibling = entries.some(
-            (e) =>
-              e.isFile() &&
-              isScriptFileName(e.name) &&
-              classifyScriptFileName(e.name, {
-                stripDisambiguationSuffix: true,
-              }).scriptName === baseName,
-          );
-          if (hasScriptSibling) continue;
-
-          const destPath = [...destSegments, ...relSegments, baseName];
-          const key = destPath.join("/");
-          if (emittedPaths.has(key)) continue;
-
-          this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
-          emittedPaths.add(key);
-          results.push({
-            guid: generateGUID(),
-            className: "ModuleScript",
-            name: baseName,
-            path: destPath,
-            source: await looseBuilder.readJsonModuleSource(full),
-          });
-          continue;
-        }
-
-        if (!isScriptFileName(entry.name)) continue;
-
-        // Skip scripts that are companion scripts of a companion model file
-        const baseName = classifyScriptFileName(entry.name, {
-          stripDisambiguationSuffix: true,
-        }).scriptName;
-        const companionModelName = `${baseName}.model.json`;
-        const hasCompanionModel = entries.some(
-          (e) => e.isFile() && e.name === companionModelName,
-        );
-        if (hasCompanionModel) {
-          continue;
-        }
-
-        const { className, scriptName } = classifyScriptFileName(entry.name, {
-          stripDisambiguationSuffix: true,
-        });
-        const destPath = [...destSegments, ...relSegments, scriptName];
-        const key = destPath.join("/");
-        if (emittedPaths.has(key)) continue;
-
-        this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
-        emittedPaths.add(key);
-        results.push({
-          guid: generateGUID(),
-          className,
-          name: scriptName,
-          path: destPath,
-          source: await fsp.readFile(full, "utf-8"),
-        });
-      }
-    };
-
-    await walk(root, []);
-
-    // Replace @self requires in all collected instances
-    for (const instance of results) {
-      if (instance.source) {
-        instance.source = replaceSelfRequires(instance.name, instance.source);
-      }
-    }
-
-    return results;
-  }
-
-  private ensureFolder(
-    pathSegments: string[],
-    results: InstanceData[],
-    emittedFolders: Set<string>,
-  ): void {
-    if (pathSegments.length === 0) return;
-    const key = pathSegments.join("/");
-    if (emittedFolders.has(key)) return;
-    this.ensureFolder(pathSegments.slice(0, -1), results, emittedFolders);
-    emittedFolders.add(key);
-    results.push({
-      guid: generateGUID(),
-      className: "Folder",
-      name: pathSegments[pathSegments.length - 1],
-      path: [...pathSegments],
-    });
   }
 
   /**
