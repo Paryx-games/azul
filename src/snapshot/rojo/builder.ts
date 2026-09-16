@@ -10,7 +10,7 @@ import {
   ScriptClassName,
 } from "../../util/scriptFile.js";
 import type { InstanceData } from "../../ipc/messages.js";
-import { convertImplicitRojoProperty } from "./convert.js";
+import { normalizeRojoProperty } from "./normalizeProperty.js";
 
 interface RojoProject {
   name: string;
@@ -337,7 +337,7 @@ export class RojoSnapshotBuilder {
     const properties: Record<string, any> = {};
     if (rawProperties && typeof rawProperties === "object") {
       for (const [k, v] of Object.entries(rawProperties)) {
-        properties[k] = convertImplicitRojoProperty(k, v);
+        properties[k] = normalizeRojoProperty(v);
       }
     }
 
@@ -346,7 +346,7 @@ export class RojoSnapshotBuilder {
     const attributes: Record<string, any> = {};
     if (rawAttributes && typeof rawAttributes === "object") {
       for (const [k, v] of Object.entries(rawAttributes)) {
-        attributes[k] = convertImplicitRojoProperty(k, v);
+        attributes[k] = normalizeRojoProperty(v);
       }
     }
 
@@ -455,7 +455,7 @@ export class RojoSnapshotBuilder {
           if (node.$properties) {
             const mergedProps = { ...(rootInstance.properties || {}) };
             for (const [k, v] of Object.entries(node.$properties)) {
-              mergedProps[k] = convertImplicitRojoProperty(k, v);
+              mergedProps[k] = normalizeRojoProperty(v);
             }
             rootInstance.properties = mergedProps;
           }
@@ -463,7 +463,7 @@ export class RojoSnapshotBuilder {
           if (node.$attributes) {
             const mergedAttrs = { ...(rootInstance.attributes || {}) };
             for (const [k, v] of Object.entries(node.$attributes)) {
-              mergedAttrs[k] = convertImplicitRojoProperty(k, v);
+              mergedAttrs[k] = normalizeRojoProperty(v);
             }
             rootInstance.attributes = mergedAttrs;
           }
@@ -524,7 +524,7 @@ export class RojoSnapshotBuilder {
         if (node.$properties) {
           const mergedProps = { ...(rootInstance.properties || {}) };
           for (const [k, v] of Object.entries(node.$properties)) {
-            mergedProps[k] = convertImplicitRojoProperty(k, v);
+            mergedProps[k] = normalizeRojoProperty(v);
           }
           rootInstance.properties = mergedProps;
         }
@@ -532,7 +532,7 @@ export class RojoSnapshotBuilder {
         if (node.$attributes) {
           const mergedAttrs = { ...(rootInstance.attributes || {}) };
           for (const [k, v] of Object.entries(node.$attributes)) {
-            mergedAttrs[k] = convertImplicitRojoProperty(k, v);
+            mergedAttrs[k] = normalizeRojoProperty(v);
           }
           rootInstance.attributes = mergedAttrs;
         }
