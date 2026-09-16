@@ -945,6 +945,7 @@ export class PushCommand {
     emittedPaths: Set<string>,
   ): Promise<InstanceData[]> {
     const results: InstanceData[] = [];
+    const looseBuilder = new RojoSnapshotBuilder({ cwd: process.cwd() });
 
     const walk = async (dir: string, relSegments: string[]) => {
       // Skip directories already handled by a Rojo project
@@ -1080,6 +1081,37 @@ export class PushCommand {
             }
             results.push(...modelInstances);
           }
+          continue;
+        }
+
+        // Plain .json files are Rojo JSON modules (ModuleScript returning the data)
+        if (looseBuilder.isJsonModuleFile(entry.name)) {
+          const baseName = path.parse(entry.name).name;
+
+          // A same-named script file wins; the JSON is treated as its data sibling
+          const hasScriptSibling = entries.some(
+            (e) =>
+              e.isFile() &&
+              isScriptFileName(e.name) &&
+              classifyScriptFileName(e.name, {
+                stripDisambiguationSuffix: true,
+              }).scriptName === baseName,
+          );
+          if (hasScriptSibling) continue;
+
+          const destPath = [...destSegments, ...relSegments, baseName];
+          const key = destPath.join("/");
+          if (emittedPaths.has(key)) continue;
+
+          this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
+          emittedPaths.add(key);
+          results.push({
+            guid: generateGUID(),
+            className: "ModuleScript",
+            name: baseName,
+            path: destPath,
+            source: await looseBuilder.readJsonModuleSource(full),
+          });
           continue;
         }
 

@@ -864,14 +864,20 @@ export class RojoSnapshotBuilder {
     return [...new Set(variants)];
   }
 
-  private isJsonModuleFile(fileName: string): boolean {
+  /**
+   * Rojo turns a plain `.json` file into a ModuleScript returning its contents.
+   * Project, model, meta and sourcemap files carry their own meaning instead.
+   */
+  public isJsonModuleFile(fileName: string): boolean {
     if (!fileName.endsWith(".json")) return false;
-    if (fileName === "default.project.json") return false;
+    if (fileName === "sourcemap.json") return false;
+    if (fileName.endsWith(".project.json")) return false;
     if (fileName.endsWith(".model.json")) return false;
+    if (fileName.endsWith(".meta.json")) return false;
     return true;
   }
 
-  private async readJsonModuleSource(filePath: string): Promise<string> {
+  public async readJsonModuleSource(filePath: string): Promise<string> {
     let parsed: unknown;
     try {
       const raw = await fs.readFile(filePath, "utf-8");

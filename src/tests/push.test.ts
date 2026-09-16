@@ -27,6 +27,10 @@ const push = new PushCommand({}) as unknown as {
     sourcemapPath: string,
     scriptFile: string | null,
   ): InstanceData[] | null;
+  buildRojoInstances(
+    destSegments: string[],
+    sourceOverride?: string,
+  ): Promise<InstanceData[] | null>;
   ipc: { close(): void };
 };
 
@@ -180,3 +184,36 @@ test("--dest rename rewrites @self against the destination name", async () => {
 });
 
 test.after(() => push.ipc.close());
+
+test("rojo push without a project JSON imports loose JSON modules", async () => {
+  const src = path.join(makeTempDir(), "src");
+  fs.mkdirSync(src, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(src, "Config.json"),
+    JSON.stringify({ enabled: true, retries: 3 }),
+    "utf8",
+  );
+  fs.writeFileSync(path.join(src, "Main.luau"), "return nil", "utf8");
+  // A JSON file beside a same-named script is that script's data sibling, not a module
+  fs.writeFileSync(path.join(src, "Main.json"), "{}", "utf8");
+  // Meta and sourcemap files carry their own meaning and must not become modules
+  fs.writeFileSync(path.join(src, "Main.meta.json"), "{}", "utf8");
+  fs.writeFileSync(path.join(src, "sourcemap.json"), "{}", "utf8");
+
+  const instances = await push.buildRojoInstances(["ReplicatedStorage"], src);
+  assert.ok(instances);
+
+  const byName = new Map(instances.map((i) => [i.name, i]));
+
+  const config = byName.get("Config");
+  assert.equal(config?.className, "ModuleScript");
+  assert.match(config!.source!, /^return \{/);
+  assert.match(config!.source!, /enabled = true/);
+  assert.deepEqual(config!.path, ["ReplicatedStorage", "Config"]);
+
+  // Main stays the script; the non-module JSON files are skipped
+  assert.equal(byName.get("Main")?.source, "return nil");
+  assert.equal(byName.has("Main.meta"), false);
+  assert.equal(byName.has("sourcemap"), false);
+});
