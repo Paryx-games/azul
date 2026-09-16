@@ -205,14 +205,23 @@ export class RojoSnapshotBuilder {
   }
 
   private globToRegex(glob: string): RegExp {
-    const escaped = glob.replace(/([|\\{}()\[\]^$+*?.])/g, "\\$1");
+    // Split on `**` first so the escape pass cannot break up the wildcards.
+    const escapeSegment = (segment: string) =>
+      segment
+        .replace(/([|\\{}()\[\]^$+.])/g, "\\$1")
+        .replace(/\*/g, "[^/]*")
+        .replace(/\?/g, "[^/]");
 
-    const regex = escaped
-      .replace(/\*\*/g, ".*")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\?/g, "[^/]");
+    const source = glob
+      .split("**")
+      .map(escapeSegment)
+      .join(".*")
+      // `**/` spans zero or more directories, so `**/x.json` has to catch a
+      // root-level x.json and not just a nested one.
+      .replace(/^\.\*\//, "(?:.*/)?")
+      .replace(/\/\.\*\//g, "/(?:.*/)?");
 
-    return new RegExp(`^${regex}$`);
+    return new RegExp(`^${source}$`);
   }
 
   private isIgnored(absPath: string): boolean {

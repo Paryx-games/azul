@@ -430,3 +430,46 @@ test("RojoSnapshotBuilder parses complex .model.json and converts properties", a
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test("globIgnorePaths ignore root-level files, not just nested ones", async () => {
+  const tmp = makeTempDir();
+  const src = path.join(tmp, "src");
+  fs.mkdirSync(src, { recursive: true });
+
+  fs.writeFileSync(path.join(src, "Kept.luau"), "return 1", "utf8");
+  fs.writeFileSync(path.join(src, "Ignored.luau"), "return 2", "utf8");
+  fs.writeFileSync(path.join(src, "nested.lock"), "x", "utf8");
+  fs.mkdirSync(path.join(src, "deep"), { recursive: true });
+  fs.writeFileSync(path.join(src, "deep", "Ignored.luau"), "return 3", "utf8");
+
+  const project = {
+    name: "IgnoreProj",
+    tree: {
+      $className: "DataModel",
+      ReplicatedStorage: { $path: "src" },
+    },
+    globIgnorePaths: ["**/Ignored.luau"],
+  };
+
+  fs.writeFileSync(
+    path.join(tmp, "default.project.json"),
+    JSON.stringify(project, null, 2),
+    "utf8",
+  );
+
+  const builder = new RojoSnapshotBuilder({
+    cwd: tmp,
+    projectFile: "default.project.json",
+  });
+  const instances = await builder.build();
+  const names = instances.map((i) => i.path.join("/"));
+
+  assert.ok(names.includes("ReplicatedStorage/Kept"), "unignored script kept");
+  // `**/x` has to span zero directories: src/Ignored.luau sits one level under cwd
+  assert.equal(names.includes("ReplicatedStorage/Ignored"), false);
+  assert.equal(names.includes("ReplicatedStorage/deep/Ignored"), false);
+  // A default pattern (`**/*.lock`) covers the same zero-or-more span
+  assert.equal(names.includes("ReplicatedStorage/nested"), false);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
