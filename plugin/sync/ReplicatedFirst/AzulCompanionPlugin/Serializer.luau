@@ -767,8 +767,14 @@ function Serializer.collectSerializedProperties(instance: Instance, options: Ser
 	local properties = {}
 
 	for propertyName, descriptor in descriptors do
-		local readOk, value = descriptor:read(instance)
-		if not readOk or value == nil then continue end
+		-- Custom descriptors can throw (e.g. a missing custom property mapping)
+		local readCalled, readOk, value = pcall(descriptor.read, descriptor, instance)
+		if not readCalled or not readOk or value == nil then
+			debugPrint(
+				`Failed to read {className}.{propertyName}: {if readCalled then tostring(value) else tostring(readOk)}`
+			)
+			continue
+		end
 
 		local encoded
 		if descriptor.dataType == REF_TYPE then
@@ -814,7 +820,13 @@ function Serializer.applySerializedProperties(
 		local value = decodePropertyValue(encoded, descriptor.dataType, options)
 		if value == nil then continue end
 
-		descriptor:write(instance, value)
+		-- Custom descriptors can throw, so one rejected property must not abort the rest
+		local called, writeOk, err = pcall(descriptor.write, descriptor, instance, value)
+		if not called or not writeOk then
+			debugPrint(
+				`Failed to write {className}.{propertyName}: {if called then tostring(err) else tostring(writeOk)}`
+			)
+		end
 	end
 end
 
