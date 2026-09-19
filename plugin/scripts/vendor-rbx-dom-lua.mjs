@@ -12,7 +12,8 @@ const DEST = path.join("plugin", "Vendor", "rbx_dom_lua");
 const isExcluded = (name) =>
   name.endsWith(".spec.lua") || name === "allValues.json";
 
-execSync(`npx --yes degit ${SOURCE} ${DEST} --force`, { stdio: "inherit" });
+// --no keeps this on the exact degit pinned in devDependencies; it errors rather than fetching one.
+execSync(`npx --no degit ${SOURCE} ${DEST} --force`, { stdio: "inherit" });
 
 for (const name of readdirSync(DEST).filter(isExcluded)) {
   rmSync(path.join(DEST, name));
