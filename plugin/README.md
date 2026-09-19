@@ -42,7 +42,8 @@ azul pack -o .\plugin.sourcemap.json
 To manage the `rbx_dom_lua` dependency specifically, use the handy Node script `vendor:rbx-dom-lua`:
 
 ```ps1
-# Gets the latest version of rbx-dom and pushes it to the plugin
+# Gets commit ref pinned in `scripts/vendor-rbx-dom-lua.js` (hopefully the latest rbx-dom)
+# and pushes it to the plugin
 npm run vendor:rbx-dom-lua
 ```
 
