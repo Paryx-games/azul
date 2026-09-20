@@ -100,6 +100,51 @@ test("RojoSnapshotBuilder links refs declared with $id, id and Rojo_Id", async (
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+test("RojoSnapshotBuilder honours both ids when a $path model root also declares one", async () => {
+  const tmp = makeTempDir();
+
+  // The project node and the model root it points at both name the same emitted
+  // instance, so a pointer may use either id.
+  write(tmp, "Target.model.json", { id: "model id", className: "Folder" });
+
+  write(tmp, "default.project.json", {
+    name: "refs",
+    tree: {
+      $className: "DataModel",
+      Workspace: {
+        Target: { $path: "Target.model.json", $id: "project id" },
+        ByProjectId: {
+          $className: "ObjectValue",
+          $attributes: { Rojo_Target_Value: "project id" },
+        },
+        ByModelId: {
+          $className: "ObjectValue",
+          $attributes: { Rojo_Target_Value: "model id" },
+        },
+      },
+    },
+  });
+
+  const instances = await new RojoSnapshotBuilder({
+    cwd: tmp,
+    projectFile: "default.project.json",
+  }).build();
+
+  const target = byName(instances, "Target");
+  const expected = { Ref: { guid: target.guid, path: target.path } };
+
+  assert.deepStrictEqual(
+    byName(instances, "ByProjectId").properties?.Value,
+    expected,
+  );
+  assert.deepStrictEqual(
+    byName(instances, "ByModelId").properties?.Value,
+    expected,
+  );
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 test("RojoSnapshotBuilder strips the ref attributes once they are linked", async () => {
   const tmp = makeTempDir();
 

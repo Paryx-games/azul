@@ -56,8 +56,12 @@ export class RojoSnapshotBuilder {
   private cwd: string;
   private emittedFolders: Set<string> = new Set();
   private moduleContainers: Set<string> = new Set();
-  /** Ids declared with `$id` or `id`, keyed by the path of the node holding them. */
-  private declaredIds: Map<string, string> = new Map();
+  /**
+   * Ids declared with `$id` or `id`, keyed by the path of the node holding them.
+   * A path can carry more than one: a project node with a `$path` and the root
+   * of the model file it points at both describe the same emitted instance.
+   */
+  private declaredIds: Map<string, Set<string>> = new Map();
   private destPrefix: string[];
   private ignoreMatchers: RegExp[] = [];
 
@@ -895,7 +899,13 @@ export class RojoSnapshotBuilder {
     const id = record.$id ?? record.id;
     if (typeof id !== "string" || id.length === 0) return;
 
-    this.declaredIds.set(pathSegments.join("\u0001"), id);
+    const key = pathSegments.join("\u0001");
+    let ids = this.declaredIds.get(key);
+    if (ids === undefined) {
+      ids = new Set();
+      this.declaredIds.set(key, ids);
+    }
+    ids.add(id);
   }
 
   /**
@@ -914,10 +924,18 @@ export class RojoSnapshotBuilder {
       if (id === null) return;
 
       const existing = targetsById.get(id);
-      if (existing !== undefined && existing !== instance) {
-        log.warn(
-          `Duplicate ref id "${id}" on ${existing.path.join("/")} and ${instance.path.join("/")}; keeping the first.`,
-        );
+      if (existing !== undefined) {
+        // One node can be described more than once, by a project node and by
+        // the root of the model file it points at, so only a collision between
+        // two different nodes is worth reporting.
+        const collides =
+          existing !== instance &&
+          existing.path.join("\u0001") !== instance.path.join("\u0001");
+        if (collides) {
+          log.warn(
+            `Duplicate ref id "${id}" on ${existing.path.join("/")} and ${instance.path.join("/")}; keeping the first.`,
+          );
+        }
         return;
       }
 
@@ -925,10 +943,12 @@ export class RojoSnapshotBuilder {
     };
 
     for (const instance of results) {
-      declare(
-        this.declaredIds.get(instance.path.join("\u0001")) ?? null,
-        instance,
+      const declaredForPath = this.declaredIds.get(
+        instance.path.join("\u0001"),
       );
+      for (const id of declaredForPath ?? []) {
+        declare(id, instance);
+      }
       declare(readRefId(instance.attributes?.[REF_ID_ATTRIBUTE]), instance);
     }
 
