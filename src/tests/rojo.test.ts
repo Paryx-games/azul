@@ -143,7 +143,7 @@ test("RojoSnapshotBuilder rewrites @self/ using the Azul instance name", async (
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test("RojoSnapshotBuilder parses complex .model.json and converts properties", async () => {
+test("RojoSnapshotBuilder parses complex .model.json and normalizes properties", async () => {
   const tmp = makeTempDir();
   const models = path.join(tmp, "models");
   fs.mkdirSync(models, { recursive: true });
@@ -393,40 +393,46 @@ test("RojoSnapshotBuilder parses complex .model.json and converts properties", a
   });
   const instances = await builder.build();
 
+  // A pod record is a single-key table whose key is the rbx-dom type name.
+  const podTag = (value: unknown): string | undefined => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const keys = Object.keys(value as Record<string, unknown>);
+    return keys.length === 1 ? keys[0] : undefined;
+  };
+  const propsOf = (name: string): Record<string, any> =>
+    (instances.find((i) => i.name === name)?.properties ?? {}) as Record<
+      string,
+      any
+    >;
+
   const part = instances.find((i) => i.name === "TestPart");
   assert.ok(part, "TestPart emitted");
   assert.strictEqual(part?.className, "Part");
-  assert.ok(
-    part?.properties &&
-      (part.properties as any).Size &&
-      (part.properties as any).Size.__type === "Vector3",
-  );
+  assert.deepStrictEqual(propsOf("TestPart").Size, { Vector3: [4, 2, 1] });
   assert.strictEqual(part?.properties?.Anchored, true);
+  // Explicit enums flatten to the item name, which Roblox coerces on assignment.
+  assert.deepStrictEqual(propsOf("TestPart").Shape, { Enum: "Block" });
 
   const label = instances.find((i) => i.name === "TestLabel");
   assert.ok(label, "TestLabel emitted");
   assert.strictEqual(label?.properties?.Text, "Hello World");
-  assert.ok(
-    label?.properties &&
-      (label.properties as any).FontFace &&
-      (label.properties as any).FontFace.__type === "Font",
-  );
+  assert.strictEqual(podTag(propsOf("TestLabel").FontFace), "Font");
 
   const particles = instances.find((i) => i.name === "TestParticles");
   assert.ok(particles, "TestParticles emitted");
-  assert.ok(
-    particles?.properties &&
-      (particles.properties as any).Color &&
-      (particles.properties as any).Color.__type === "ColorSequence",
-  );
+  assert.strictEqual(podTag(propsOf("TestParticles").Color), "ColorSequence");
 
+  // Ambiguous values pass through untouched. The plugin resolves them, because
+  // only the reflection database knows each property's declared type.
   const implicit = instances.find((i) => i.name === "ImplicitPart");
   assert.ok(implicit, "ImplicitPart emitted");
-  assert.ok(
-    implicit?.properties &&
-      (implicit.properties as any).CFrame &&
-      (implicit.properties as any).CFrame.__type === "CFrame",
+  assert.deepStrictEqual(
+    propsOf("ImplicitPart").CFrame,
+    [0, 10, 20, 1, 0, 0, 0, 1, 0, 0, 0, 1],
   );
+  assert.deepStrictEqual(propsOf("ImplicitPart").Size, [2, 2, 2]);
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });
