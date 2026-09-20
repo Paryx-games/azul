@@ -12,6 +12,30 @@ import {
 import type { InstanceData } from "../../ipc/messages.js";
 import { normalizeRojoProperty } from "./normalizeProperty.js";
 
+// Attribute a target uses to declare its ref id, as Rojo's syncback writes it.
+const REF_ID_ATTRIBUTE = "Rojo_Id";
+
+// Prefix of the attribute a pointer uses, e.g. `Rojo_Target_PrimaryPart`.
+const REF_POINTER_PREFIX = "Rojo_Target_";
+
+/**
+ * Reads a ref id, which may be written as a bare string or in the fully
+ * qualified form. Rojo accepts `BinaryString` here as well as `String`.
+ */
+function readRefId(value: unknown): string | null {
+  if (typeof value === "string") return value.length > 0 ? value : null;
+
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    for (const key of ["String", "BinaryString"]) {
+      const inner = record[key];
+      if (typeof inner === "string" && inner.length > 0) return inner;
+    }
+  }
+
+  return null;
+}
+
 interface RojoProject {
   name: string;
   tree: Record<string, any>;
@@ -32,6 +56,8 @@ export class RojoSnapshotBuilder {
   private cwd: string;
   private emittedFolders: Set<string> = new Set();
   private moduleContainers: Set<string> = new Set();
+  /** Ids declared with `$id` or `id`, keyed by the path of the node holding them. */
+  private declaredIds: Map<string, string> = new Map();
   private destPrefix: string[];
   private ignoreMatchers: RegExp[] = [];
 
@@ -145,6 +171,9 @@ export class RojoSnapshotBuilder {
         instance.source = replaceSelfRequires(instance.name, instance.source);
       }
     }
+
+    // Needs the whole tree, since a pointer may name a target emitted later.
+    this.linkRefProperties(results);
 
     // Stable ordering: shallow-first, then lexical for determinism
     results.sort((a, b) => {
@@ -278,6 +307,8 @@ export class RojoSnapshotBuilder {
     results: InstanceData[],
   ): Promise<void> {
     if (typeof node !== "object" || node === null) return;
+
+    this.recordDeclaredId(node, currentPath);
 
     const pathHint = node.$path || node.path;
     if (typeof pathHint === "string") {
@@ -419,6 +450,8 @@ export class RojoSnapshotBuilder {
     projectDir: string,
     results: InstanceData[],
   ): Promise<void> {
+    this.recordDeclaredId(node, pathSegments);
+
     const className = this.resolveClassName(node, pathSegments);
     const pathHint = typeof node.$path === "string" ? node.$path : undefined;
     const absPath = pathHint ? path.resolve(projectDir, pathHint) : null;
@@ -566,23 +599,27 @@ export class RojoSnapshotBuilder {
       const scriptClass =
         initScript.className ??
         classifyScriptFileName(initScript.fileName).className;
-      results.push({
+      const instance: InstanceData = {
         guid: this.makeGuid(),
         className: scriptClass,
         name: pathSegments[pathSegments.length - 1],
         path: [...pathSegments],
         source: initScript.source,
-      });
+      };
+      this.applyNodeOverrides(node, instance);
+      results.push(instance);
     }
     // If no special file (model or script) was found, emit a standard instance.
     else {
       this.ensureFolder(pathSegments.slice(0, -1), results);
-      results.push({
+      const instance: InstanceData = {
         guid: this.makeGuid(),
         className,
         name,
         path: [...pathSegments],
-      });
+      };
+      this.applyNodeOverrides(node, instance);
+      results.push(instance);
     }
 
     // Recurse into children defined in JSON
@@ -808,6 +845,149 @@ export class RojoSnapshotBuilder {
           source,
         });
       }
+    }
+  }
+
+  /**
+   * Merges a project node's `$properties`, `$attributes` and `$tags` onto the
+   * instance it produced. Anything already on the instance came from a model
+   * file, which the project node overrides.
+   */
+  private applyNodeOverrides(
+    node: Record<string, any>,
+    instance: InstanceData,
+  ): void {
+    if (node.$properties && typeof node.$properties === "object") {
+      const merged = { ...(instance.properties ?? {}) };
+      for (const [key, value] of Object.entries(node.$properties)) {
+        merged[key] = normalizeRojoProperty(value);
+      }
+      instance.properties = merged;
+    }
+
+    if (node.$attributes && typeof node.$attributes === "object") {
+      const merged = { ...(instance.attributes ?? {}) };
+      for (const [key, value] of Object.entries(node.$attributes)) {
+        merged[key] = normalizeRojoProperty(value);
+      }
+      instance.attributes = merged;
+    }
+
+    if (Array.isArray(node.$tags)) {
+      const merged = new Set(instance.tags ?? []);
+      for (const tag of node.$tags) {
+        merged.add(String(tag));
+      }
+      instance.tags = [...merged];
+    }
+  }
+
+  /**
+   * Notes an id declared with `$id` in a project file or `id` in a model file.
+   * Keyed by path, because a node is turned into an instance further down one of
+   * several branches, and the path is what they have in common.
+   */
+  private recordDeclaredId(node: unknown, pathSegments: string[]): void {
+    if (typeof node !== "object" || node === null) return;
+
+    const record = node as Record<string, unknown>;
+    // A project file may hold a child literally named "id", so only a string counts.
+    const id = record.$id ?? record.id;
+    if (typeof id !== "string" || id.length === 0) return;
+
+    this.declaredIds.set(pathSegments.join("\u0001"), id);
+  }
+
+  /**
+   * Links up Ref properties to the target instances they point at, using the
+   * declared ids and the `Rojo_Target_` attributes. Logs warnings for any
+   * pointers that don't resolve to a target.
+   *
+   * The `properties` of the instances will have an Azul-style `Ref` objects.
+   *
+   * The `Rojo_Target_` attributes and the `Rojo_Id` attribute are removed.
+   */
+  private linkRefProperties(results: InstanceData[]): void {
+    const targetsById = new Map<string, InstanceData>();
+
+    const declare = (id: string | null, instance: InstanceData): void => {
+      if (id === null) return;
+
+      const existing = targetsById.get(id);
+      if (existing !== undefined && existing !== instance) {
+        log.warn(
+          `Duplicate ref id "${id}" on ${existing.path.join("/")} and ${instance.path.join("/")}; keeping the first.`,
+        );
+        return;
+      }
+
+      targetsById.set(id, instance);
+    };
+
+    for (const instance of results) {
+      declare(
+        this.declaredIds.get(instance.path.join("\u0001")) ?? null,
+        instance,
+      );
+      declare(readRefId(instance.attributes?.[REF_ID_ATTRIBUTE]), instance);
+    }
+
+    let linked = 0;
+    for (const instance of results) {
+      if (!instance.attributes) continue;
+
+      for (const [attributeName, attributeValue] of Object.entries(
+        instance.attributes,
+      )) {
+        if (!attributeName.startsWith(REF_POINTER_PREFIX)) continue;
+
+        const propertyName = attributeName.slice(REF_POINTER_PREFIX.length);
+        if (propertyName.length === 0) continue;
+
+        const where = `${instance.path.join("/")}.${attributeName}`;
+
+        const id = readRefId(attributeValue);
+        if (id === null) {
+          log.warn(`${where} is not a string id, so the ref was skipped.`);
+          continue;
+        }
+
+        const target = targetsById.get(id);
+        if (target === undefined) {
+          log.warn(`${where} points at unknown id "${id}", so it was skipped.`);
+          continue;
+        }
+
+        instance.properties ??= {};
+        instance.properties[propertyName] = {
+          Ref: { guid: target.guid, path: [...target.path] },
+        };
+        linked += 1;
+      }
+    }
+
+    // No need to keep the attributes around after linking
+    for (const instance of results) {
+      if (!instance.attributes) continue;
+
+      for (const attributeName of Object.keys(instance.attributes)) {
+        if (
+          attributeName === REF_ID_ATTRIBUTE ||
+          attributeName.startsWith(REF_POINTER_PREFIX)
+        ) {
+          delete instance.attributes[attributeName];
+        }
+      }
+
+      if (Object.keys(instance.attributes).length === 0) {
+        delete instance.attributes;
+      }
+    }
+
+    if (linked > 0) {
+      log.debug(
+        `Linked ${linked} Ref ${linked === 1 ? "property" : "properties"}`,
+      );
     }
   }
 
