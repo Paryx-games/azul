@@ -61,7 +61,7 @@ test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and
       123456789,
     );
     assert.strictEqual(typeof root._azul?.packedAt, "string");
-    assert.strictEqual(root._azul?.packVersion, 1);
+    assert.strictEqual(root._azul?.packVersion, 2);
     assert.strictEqual(root._azul?.placeId, 123456789);
     assert.strictEqual(packedCount, 1);
 

@@ -40,7 +40,7 @@ interface SourcemapRoot {
   };
 }
 
-const PACK_VERSION = 1;
+const PACK_VERSION = 2;
 
 /**
  * Packs a one-shot snapshot from Studio into a sourcemap.json.
