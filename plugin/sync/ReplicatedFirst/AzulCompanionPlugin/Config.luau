@@ -38,6 +38,7 @@ configTable = {
 	DEBUG_MODE = false,
 	SILENT_MODE = false,
 	AUTO_OPEN_MODAL = true,
+	STREAM_SOLO_OUTPUT = false,
 }
 
 return configTable
