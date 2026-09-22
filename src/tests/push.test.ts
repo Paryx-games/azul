@@ -179,4 +179,4 @@ test("--dest rename rewrites @self against the destination name", async () => {
   assert.strictEqual(root.source, 'require("./Menu/Foo")');
 });
 
-test.after(() => push.ipc.close());
+test.after(async () => await push.ipc.close());

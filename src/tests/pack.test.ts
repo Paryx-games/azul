@@ -82,7 +82,7 @@ test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and
         .replace(/\\/g, "/"),
     ]);
   } finally {
-    (pack as any).ipc.close();
+    await (pack as any).ipc.close();
     config.syncDir = prevSyncDir;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -135,7 +135,7 @@ test("PackCommand overwrites whatever is already at the output path instead of m
       false,
     );
   } finally {
-    (pack as any).ipc.close();
+    await (pack as any).ipc.close();
     config.syncDir = prevSyncDir;
     fs.rmSync(tmp, { recursive: true, force: true });
   }

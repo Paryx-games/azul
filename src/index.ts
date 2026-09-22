@@ -1127,7 +1127,7 @@ export class SyncDaemon {
       await this.fileWatcher.stop();
       this.ipc.send({ type: "daemonDisconnect" });
       await new Promise((resolve) => setTimeout(resolve, 50));
-      this.ipc.close();
+      await this.ipc.close();
       await new Promise<void>((resolve, reject) => {
         this.httpServer.close((error) => {
           if (error) {

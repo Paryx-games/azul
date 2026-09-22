@@ -24,6 +24,8 @@ export class IPCServer {
   private handshakeHandler: (() => void) | null = null;
   private requestSnapshotOnConnect: boolean;
   private pingIntervals = new Map<WebSocket, NodeJS.Timeout>();
+  private outputClients = new Set<WebSocket>();
+  private closePromise: Promise<void> | null = null;
   private handshakeComplete = false;
 
   constructor(port?: number, server?: HttpServer, options?: IPCServerOptions) {
@@ -49,6 +51,8 @@ export class IPCServer {
   private setupServer(): void {
     this.wss.on("connection", (ws, request) => {
       if (request.url === "/studio-output") {
+        this.outputClients.add(ws);
+        ws.once("close", () => this.outputClients.delete(ws));
         ws.on("message", (data) => {
           try {
             const message = JSON.parse(data.toString()) as StudioMessage;
@@ -161,7 +165,7 @@ export class IPCServer {
 
       this.sendError(message);
       this.send({ type: "daemonDisconnect" }); // stops the plugin's sync session
-      this.close();
+      await this.close();
 
       log.error(`VERSION MISMATCH:`);
       log.error(
@@ -321,17 +325,31 @@ export class IPCServer {
   /**
    * Close the server
    */
-  public close(): void {
+  public close(): Promise<void> {
+    if (this.closePromise) {
+      return this.closePromise;
+    }
+
     for (const interval of this.pingIntervals.values()) {
       clearInterval(interval);
     }
     this.pingIntervals.clear();
 
     if (this.client) {
-      this.client.close();
+      this.client.terminate();
       this.client = null;
     }
-    this.wss.close();
-    log.info("WebSocket server closed.");
+    for (const client of this.outputClients) {
+      client.terminate();
+    }
+    this.outputClients.clear();
+
+    this.closePromise = new Promise((resolve) => {
+      this.wss.close(() => {
+        log.info("WebSocket server closed.");
+        resolve();
+      });
+    });
+    return this.closePromise;
   }
 }

@@ -108,7 +108,7 @@ test("accepts playtest output without replacing the Studio connection", async ()
     outputClient.close();
   } finally {
     studioClient.close();
-    ipcServer.close();
+    await ipcServer.close();
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   }
 });
