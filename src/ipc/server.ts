@@ -47,7 +47,21 @@ export class IPCServer {
   }
 
   private setupServer(): void {
-    this.wss.on("connection", (ws) => {
+    this.wss.on("connection", (ws, request) => {
+      if (request.url === "/studio-output") {
+        ws.on("message", (data) => {
+          try {
+            const message = JSON.parse(data.toString()) as StudioMessage;
+            if (message.type === "studioOutput" && this.messageHandler) {
+              this.messageHandler(message);
+            }
+          } catch (error) {
+            log.error("Failed to parse Studio output message:", error);
+          }
+        });
+        return;
+      }
+
       log.info("Studio client connected");
       log.info("Waiting for Studio messages...");
 
