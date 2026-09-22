@@ -72,7 +72,7 @@ export class SyncDaemon {
     });
 
     this.setupHandlers();
-    this.httpServer.listen(config.port);
+    this.httpServer.listen(config.port, "127.0.0.1");
   }
 
   /**
@@ -147,14 +147,18 @@ export class SyncDaemon {
         break;
 
       case "studioOutputStart":
+        if (typeof message.sessionId !== "string" || !message.sessionId) {
+          break;
+        }
         this.studioOutputSessionId = message.sessionId;
+        this.ipc.setOutputSessionId(message.sessionId);
         console.log("==== STUDIO OUTPUT ====");
         break;
 
       case "studioOutput":
         if (
           this.studioOutputSessionId &&
-          (message.sessionId === this.studioOutputSessionId || message.source)
+          message.sessionId === this.studioOutputSessionId
         ) {
           console.log(
             this.studioOutputFormatter.format(
@@ -169,6 +173,7 @@ export class SyncDaemon {
         if (message.sessionId === this.studioOutputSessionId) {
           console.log("=======================");
           this.studioOutputSessionId = null;
+          this.ipc.setOutputSessionId(null);
         }
         break;
 

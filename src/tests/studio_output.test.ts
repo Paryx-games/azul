@@ -76,6 +76,7 @@ test("accepts playtest output without replacing the Studio connection", async ()
   const ipcServer = new IPCServer(undefined, httpServer, {
     requestSnapshotOnConnect: false,
   });
+  ipcServer.setOutputSessionId("test-session");
   const studioClient = new WebSocket(`ws://127.0.0.1:${address.port}`);
 
   try {
@@ -89,13 +90,13 @@ test("accepts playtest output without replacing the Studio connection", async ()
       });
     });
     const outputClient = new WebSocket(
-      `ws://127.0.0.1:${address.port}/studio-output`,
+      `ws://127.0.0.1:${address.port}/studio-output?sessionId=test-session`,
     );
     await waitForOpen(outputClient);
     outputClient.send(
       JSON.stringify({
         type: "studioOutput",
-        sessionId: "",
+        sessionId: "test-session",
         message: "server output",
         messageType: "MessageOutput",
         source: "server",

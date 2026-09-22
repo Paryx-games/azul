@@ -91,6 +91,7 @@ local HttpService = game:GetService("HttpService")
 local LogService = game:GetService("LogService")
 
 local source = %q
+local sessionId = %q
 local pendingMessages = {}
 local client = nil
 local isOpen = false
@@ -107,7 +108,7 @@ end
 local function sendMessage(message, messageType)
 	local encoded = HttpService:JSONEncode({
 		type = "studioOutput",
-		sessionId = "",
+		sessionId = sessionId,
 		message = message,
 		messageType = messageType.Name,
 		source = source,
@@ -236,9 +237,11 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		if isSoloRunning and not self.studioOutputSessionId then
 			self.studioOutputSessionId = HttpService:GenerateGUID(false)
 			sendMessage("studioOutputStart", { sessionId = self.studioOutputSessionId })
+			self:updateStudioOutputBridges()
 		elseif not isSoloRunning and self.studioOutputSessionId then
 			sendMessage("studioOutputEnd", { sessionId = self.studioOutputSessionId })
 			self.studioOutputSessionId = nil
+			self:updateStudioOutputBridges()
 		end
 	end
 
@@ -399,9 +402,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		setOutboundSuppressed(true)
-		local outputUrl = self.config.WS_URL:gsub("/+$", "") .. "/studio-output"
-		local serverSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "server", outputUrl)
-		local clientSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "client", outputUrl)
+		local sessionId = self.studioOutputSessionId or ""
+		local outputUrl = self.config.WS_URL:gsub("/+$", "") .. "/studio-output?sessionId=" .. sessionId
+		local serverSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "server", sessionId, outputUrl)
+		local clientSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "client", sessionId, outputUrl)
 		local starterPlayerScripts = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
 
 		updateBridge(game:GetService("ServerScriptService"), "Script", "_AzulStudioOutputServer", serverSource)
