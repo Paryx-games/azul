@@ -399,7 +399,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		setOutboundSuppressed(true)
-		local outputUrl = self.config.WS_URL .. "/studio-output"
+		local outputUrl = self.config.WS_URL:gsub("/+$", "") .. "/studio-output"
 		local serverSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "server", outputUrl)
 		local clientSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "client", outputUrl)
 		local starterPlayerScripts = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
