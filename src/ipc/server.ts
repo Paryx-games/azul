@@ -101,6 +101,11 @@ export class IPCServer {
           this.pingIntervals.delete(ws);
         }
 
+        // A replaced socket closing late must not tear down its successor
+        if (this.client !== ws) {
+          return;
+        }
+
         log.info("Studio client disconnected");
         this.client = null;
         this.handshakeComplete = false;

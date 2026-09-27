@@ -165,6 +165,30 @@ test("accepts playtest output without replacing the Studio connection", async ()
   }
 });
 
+test("keeps the new Studio connection when a replaced one closes", async () => {
+  const { httpServer, ipcServer, url } = await startServer();
+  const oldClient = new WebSocket(url);
+  let newClient: WebSocket | undefined;
+
+  try {
+    await waitForOpen(oldClient);
+    const oldClosed = new Promise<void>((resolve) =>
+      oldClient.once("close", () => resolve()),
+    );
+    newClient = new WebSocket(url);
+    await waitForOpen(newClient);
+    await oldClosed;
+    // Let the server process the old socket's close event
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.equal(ipcServer.isConnected(), true);
+  } finally {
+    // Terminate here so a failed assertion can't leave the server waiting on an open socket
+    newClient?.terminate();
+    await stopServer(httpServer, ipcServer);
+  }
+});
+
 test("rejects playtest output while Studio is not connected", async () => {
   const { httpServer, ipcServer, url } = await startServer();
 
