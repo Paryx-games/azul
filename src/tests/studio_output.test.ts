@@ -7,12 +7,31 @@ import { createServer, type Server } from "node:http";
 import { WebSocket } from "ws";
 import { IPCServer } from "../ipc/server.js";
 import { StudioOutputFormatter } from "../studioOutput.js";
+import type { StudioOutputMessage } from "../ipc/messages.js";
 
 function waitForOpen(webSocket: WebSocket): Promise<void> {
   return new Promise((resolve, reject) => {
     webSocket.once("open", resolve);
     webSocket.once("error", reject);
   });
+}
+
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
+
+/** Build a relayed message logged at 00:16:28.796 local time. */
+function output(
+  message: string,
+  messageType: string,
+  source: StudioOutputMessage["source"] = "server",
+): StudioOutputMessage {
+  return {
+    type: "studioOutput",
+    message,
+    messageType,
+    source,
+    timestamp: new Date(2026, 0, 1, 0, 16, 28, 796).getTime(),
+  };
 }
 
 test("rewrites Studio script locations using the sourcemap", () => {
@@ -33,9 +52,7 @@ test("rewrites Studio script locations using the sourcemap", () => {
               {
                 name: "MyModule",
                 className: "Script",
-                filePaths: [
-                  "sync\\ServerScriptService\\MyModule.server.luau",
-                ],
+                filePaths: ["sync\\ServerScriptService\\MyModule.server.luau"],
               },
             ],
           },
@@ -46,10 +63,12 @@ test("rewrites Studio script locations using the sourcemap", () => {
     const formatter = new StudioOutputFormatter(sourcemapPath);
     assert.equal(
       formatter.format(
-        "Script 'game.ServerScriptService.MyModule', Line 42 - attempt to index nil",
-        "MessageOutput",
+        output(
+          "Script 'game.ServerScriptService.MyModule', Line 42 - attempt to index nil",
+          "MessageOutput",
+        ),
       ),
-      "Script sync/ServerScriptService/MyModule.server.luau:42 - attempt to index nil",
+      `${DIM}  00:16:28.796${RESET}  Script sync/ServerScriptService/MyModule.server.luau:42 - attempt to index nil  ${DIM}-  Server${RESET}`,
     );
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
@@ -60,10 +79,13 @@ test("colors warnings without changing unresolved Studio locations", () => {
   const formatter = new StudioOutputFormatter("missing-sourcemap.json");
   assert.equal(
     formatter.format(
-      "Script 'game.ServerScriptService.Missing', Line 7 - warning",
-      "MessageWarning",
+      output(
+        "Script 'game.ServerScriptService.Missing', Line 7 - warning",
+        "MessageWarning",
+        "client",
+      ),
     ),
-    "\x1b[33mScript 'game.ServerScriptService.Missing', Line 7 - warning\x1b[0m",
+    `${DIM}  00:16:28.796${RESET}  \x1b[33mScript 'game.ServerScriptService.Missing', Line 7 - warning${RESET}  ${DIM}-  Client${RESET}`,
   );
 });
 
@@ -110,6 +132,7 @@ test("accepts playtest output without replacing the Studio connection", async ()
         message: "server\x1b[2J output",
         messageType: "MessageOutput",
         source: "server",
+        timestamp: Date.now(),
       }),
     );
 

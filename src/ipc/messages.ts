@@ -89,6 +89,8 @@ export interface StudioOutputMessage {
   message: string;
   messageType: string;
   source: "server" | "client";
+  /** Unix time in milliseconds when the message was logged */
+  timestamp: number;
 }
 
 export interface PingMessage {

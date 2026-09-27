@@ -146,12 +146,7 @@ export class SyncDaemon {
         break;
 
       case "studioOutput":
-        console.log(
-          this.studioOutputFormatter.format(
-            message.message,
-            message.messageType,
-          ),
-        );
+        console.log(this.studioOutputFormatter.format(message));
         break;
 
       case "ping":

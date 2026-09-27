@@ -22,6 +22,7 @@ function isStudioOutputMessage(value: unknown): value is StudioOutputMessage {
     message.type === "studioOutput" &&
     typeof message.message === "string" &&
     typeof message.messageType === "string" &&
+    typeof message.timestamp === "number" &&
     (message.source === "server" || message.source === "client")
   );
 }
@@ -66,7 +67,10 @@ export class IPCServer {
 
   private setupServer(): void {
     this.wss.on("connection", (ws, request) => {
-      if (new URL(request.url ?? "/", "http://localhost").pathname === "/studio-output") {
+      if (
+        new URL(request.url ?? "/", "http://localhost").pathname ===
+        "/studio-output"
+      ) {
         this.handleOutputConnection(ws);
         return;
       }
@@ -249,7 +253,10 @@ export class IPCServer {
           this.messageHandler({
             ...message,
             // Strip control characters so relayed text can't inject terminal escapes
-            message: message.message.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, ""),
+            message: message.message.replace(
+              /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g,
+              "",
+            ),
           });
         }
       } catch (error) {

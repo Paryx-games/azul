@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { StudioOutputMessage } from "./ipc/messages.js";
 
 interface SourcemapNode {
   name: string;
@@ -13,10 +14,18 @@ interface SourcemapRoot {
 
 const colors = {
   reset: "\x1b[0m",
+  dim: "\x1b[2m",
   blue: "\x1b[34m",
   yellow: "\x1b[33m",
   red: "\x1b[31m",
 };
+
+/** Local wall-clock time as `HH:MM:SS.mmm`. */
+function formatTime(date: Date): string {
+  const pad = (value: number, length = 2) =>
+    String(value).padStart(length, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+}
 
 export class StudioOutputFormatter {
   private sourcemapPath: string;
@@ -27,10 +36,17 @@ export class StudioOutputFormatter {
     this.sourcemapPath = path.resolve(sourcemapPath);
   }
 
-  public format(message: string, messageType: string): string {
-    const rewritten = this.rewriteSourceLocations(message);
-    const color = this.getColor(messageType);
-    return color ? `${color}${rewritten}${colors.reset}` : rewritten;
+  /**
+   * Format a playtest message like Studio's Output window:
+   * `  00:16:28.796  message  -  Server`, with the timestamp and source dimmed.
+   */
+  public format(output: StudioOutputMessage): string {
+    const time = formatTime(new Date(output.timestamp));
+    const source = output.source === "server" ? "Server" : "Client";
+    const message = this.rewriteSourceLocations(output.message);
+    const color = this.getColor(output.messageType);
+    const body = color ? `${color}${message}${colors.reset}` : message;
+    return `${colors.dim}  ${time}${colors.reset}  ${body}  ${colors.dim}-  ${source}${colors.reset}`;
   }
 
   private rewriteSourceLocations(message: string): string {

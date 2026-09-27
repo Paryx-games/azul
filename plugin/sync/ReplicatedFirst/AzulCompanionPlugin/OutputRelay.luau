@@ -57,12 +57,13 @@ function OutputRelay.start(wsUrl: string)
 		table.clear(pending)
 	end
 
-	messageConnection = LogService.MessageOut:Connect(function(message, messageType)
+	local function relay(message: string, messageType: Enum.MessageType, timestamp: number)
 		local encoded = HttpService:JSONEncode({
 			type = "studioOutput",
 			message = message,
 			messageType = messageType.Name,
 			source = source,
+			timestamp = timestamp, -- Taken when logged so buffered messages keep their real time
 		})
 
 		if isOpen then
@@ -70,7 +71,16 @@ function OutputRelay.start(wsUrl: string)
 		elseif #pending < MAX_PENDING_MESSAGES then
 			table.insert(pending, encoded)
 		end
-	end)
+	end
+
+	-- Previous messages are removed when a playtest is started, so getting the log history is fine
+	for _, entry in LogService:GetLogHistory() do
+		relay(entry.message, entry.messageType, entry.timestamp * 1000)
+	end
+
+	messageConnection = LogService.MessageOut:Connect(
+		function(message, messageType) relay(message, messageType, DateTime.now().UnixTimestampMillis) end
+	)
 
 	client.Opened:Connect(flush)
 	client.Closed:Connect(stop)
