@@ -11,30 +11,33 @@ local Enums = require("../Enums")
 
 local fusion = require("../Packages/fusion")
 local Theme = require("./Theme")
-local Toolbar = require("./Components/Plugin/Toolbar")
-local ToolbarButton = require("./Components/Plugin/ToolbarButton")
-local Widget = require("./Components/Plugin/Widget")
-local Container = require("./Components/Container")
-local List = require("./Components/List")
-local Padding = require("./Components/Padding")
-local Image = require("./Components/Image")
-local Text = require("./Components/Text")
-local TextButton = require("./Components/TextButton")
-local Checkbox = require("./Components/Checkbox")
-local OptionSelector = require("./Components/OptionSelector")
-local Input = require("./Components/Input")
-local ScrollingContainer = require("./Components/ScrollingContainer")
-local Box = require("./Components/Box")
 local Notifications = require("./Components/Notifications")
-local Slider = require("./Components/Slider")
 
-local Value = fusion.Value
-local Computed = fusion.Computed
+-- Registered on the root scope, so they can be used as `scope:Name { ... }`
+local Components = {
+	Box = require("./Components/Box"),
+	Checkbox = require("./Components/Checkbox"),
+	Container = require("./Components/Container"),
+	Image = require("./Components/Image"),
+	Input = require("./Components/Input"),
+	List = require("./Components/List"),
+	Notifications = Notifications,
+	OptionSelector = require("./Components/OptionSelector"),
+	Padding = require("./Components/Padding"),
+	ScrollingContainer = require("./Components/ScrollingContainer"),
+	Slider = require("./Components/Slider"),
+	Text = require("./Components/Text"),
+	TextButton = require("./Components/TextButton"),
+	Toolbar = require("./Components/Plugin/Toolbar"),
+	ToolbarButton = require("./Components/Plugin/ToolbarButton"),
+	Widget = require("./Components/Plugin/Widget"),
+}
+
 local Children = fusion.Children
 local OnEvent = fusion.OnEvent
-local Ref = fusion.Ref
-local Observer = fusion.Observer
 local peek = fusion.peek
+
+type Scope = fusion.Scope<typeof(fusion) & typeof(Components)>
 
 UI.__index = UI
 
@@ -56,6 +59,8 @@ export type CallbackFunctions = {
 
 type AzulUI = {
 	plugin: Plugin,
+	-- Owns every state object and instance the UI creates; cleaned up on unload
+	scope: Scope,
 	config: { any },
 	callbacks: CallbackFunctions,
 	LOGO: string,
@@ -128,116 +133,118 @@ local function validateNumberInput(newValue: string, callback: (number) -> ())
 	callback(numberValue)
 end
 
-local function section(title: string, children: { Instance })
-	return Container({
+local function section(scope: Scope, title: string, children: { Instance })
+	return scope:Container {
 		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		[Children] = {
-			List({
+			scope:List {
 				Spacing = 6,
-			}),
-			Text({
+			},
+			scope:Text {
 				Text = title,
 				FontFace = Theme.Fonts.Bold,
 				TextSize = Theme.TextSize.Medium,
 				Size = UDim2.fromScale(1, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
-			}),
+			},
 			children,
 		},
-	})
+	}
 end
 
-local function infoText(text: string)
-	return Text({
+local function infoText(scope: Scope, text: string)
+	return scope:Text {
 		Text = text,
 		TextSize = Theme.TextSize.Small,
 		Color = Theme.Colors.TextDimmed,
 		RichText = true,
 		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-	})
+	}
 end
 
-local function labeledToggle(label: string, value: fusion.Value<boolean>, changed: (boolean) -> ())
-	return Container({
+local function labeledToggle(scope: Scope, label: string, value: fusion.Value<boolean>, changed: (boolean) -> ())
+	return scope:Container {
 		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		[Children] = {
-			List({
+			scope:List {
 				FillDirection = Enum.FillDirection.Horizontal,
 				VerticalAlignment = Enum.VerticalAlignment.Center,
 				Spacing = 8,
-			}),
-			Checkbox({
+			},
+			scope:Checkbox {
 				Value = value,
 				Changed = changed,
-			}),
-			Text({
+			},
+			scope:Text {
 				Text = label,
 				TextSize = Theme.TextSize.Medium,
 				AutomaticSize = Enum.AutomaticSize.XY,
-			}),
+			},
 		},
-	})
+	}
 end
 
-local function labeledInput(label: string, ref: fusion.Value<TextBox?>, props: { [string]: any })
-	return Container({
+local function labeledInput(scope: Scope, label: string, ref: fusion.Value<TextBox?>, props: { [string]: any })
+	local input = scope:Input {
+		Text = props.Text or "",
+		PlaceholderText = props.Placeholder or "",
+		TextWrapped = props.TextWrapped or false,
+		MultiLine = props.MultiLine or false,
+		ClearTextOnFocus = false,
+		Size = UDim2.fromScale(1, 1),
+		Changed = props.Changed,
+		Finished = props.Finished,
+	}
+	ref:set(input)
+
+	return scope:Container {
 		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		[Children] = {
-			List({
+			scope:List {
 				Spacing = 4,
-			}),
-			Text({
+			},
+			scope:Text {
 				Text = label,
 				TextSize = Theme.TextSize.Small,
 				Color = Theme.Colors.TextDimmed,
 				AutomaticSize = Enum.AutomaticSize.XY,
-			}),
-			Box({
+			},
+			scope:Box {
 				Size = props.BoxSize or UDim2.new(1, 0, 0, Theme.CompSizeY.Medium),
 				AutomaticSize = Enum.AutomaticSize.None,
 				[Children] = {
-					Padding({
+					scope:Padding {
 						Padding = 6,
 						Vertical = false,
-					}),
-					Input {
-						Text = props.Text or "",
-						PlaceholderText = props.Placeholder or "",
-						TextWrapped = props.TextWrapped or false,
-						MultiLine = props.MultiLine or false,
-						ClearTextOnFocus = false,
-						Size = UDim2.fromScale(1, 1),
-						[Ref] = ref,
-						Changed = props.Changed,
-						Finished = props.Finished,
 					},
+					input,
 				},
-			}),
+			},
 		},
-	})
+	}
 end
 
-local function labeledSlider(label: string, props: { [string]: any })
-	return Container({
+local function labeledSlider(scope: Scope, label: string, props: { [string]: any })
+	return scope:Container {
 		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		[Children] = {
-			List({
+			scope:List {
 				Spacing = 4,
-			}),
-			Text({
+			},
+			scope:Text {
 				Text = label,
 				TextSize = Theme.TextSize.Small,
 				Color = Theme.Colors.TextDimmed,
 				AutomaticSize = Enum.AutomaticSize.XY,
-			}),
-			Slider(props),
+			},
+			scope:Slider(props),
 		},
-	})
+	}
 end
 
 --- The reconnection slider's minimum (0) stands for infinite attempts, stored in config as -1.
@@ -261,43 +268,47 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	-- Track sync enabled state locally
 	self.isSyncEnabled = false
 
-	self.icon = Value(self.LOGO)
-	self.isOpen = Value(Config.AUTO_OPEN_MODAL and true or false)
-	self.syncEnabled = Value(false)
-	self.handshakeComplete = Value(false)
-	self.autoConnect = Value(Config.AUTO_CONNECT)
-	self.debugMode = Value(Config.DEBUG_MODE)
-	self.silentMode = Value(Config.SILENT_MODE)
-	self.notifications = Value(Config.NOTIFICATIONS)
-	self.notificationSounds = Value(Config.NOTIFICATION_SOUNDS)
-	self.autoOpenModal = Value(Config.AUTO_OPEN_MODAL)
-	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
-	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
+	local scope = fusion.scoped(fusion, Components)
+	self.scope = scope
+	plugin.Unloading:Once(function() fusion.doCleanup(scope) end)
 
-	self.wsUrlRef = Value(nil)
-	self.heartbeat = Value(Config.HEARTBEAT_INTERVAL)
-	self.batchIdleRef = Value(nil)
-	self.scriptDebounceRef = Value(nil)
+	self.icon = scope:Value(self.LOGO)
+	self.isOpen = scope:Value(Config.AUTO_OPEN_MODAL and true or false)
+	self.syncEnabled = scope:Value(false)
+	self.handshakeComplete = scope:Value(false)
+	self.autoConnect = scope:Value(Config.AUTO_CONNECT)
+	self.debugMode = scope:Value(Config.DEBUG_MODE)
+	self.silentMode = scope:Value(Config.SILENT_MODE)
+	self.notifications = scope:Value(Config.NOTIFICATIONS)
+	self.notificationSounds = scope:Value(Config.NOTIFICATION_SOUNDS)
+	self.autoOpenModal = scope:Value(Config.AUTO_OPEN_MODAL)
+	self.settingsScopeValue = scope:Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
+	self.listTypeValue = scope:Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
-	self.maxHandshakes = Value(Config.MAX_HANDSHAKES)
-	self.maxReconnections = Value(toReconnectionSlider(Config.MAX_RECONNECTIONS))
-	self.reconnectionInterval = Value(Config.RECONNECTION_INTERVAL)
+	self.wsUrlRef = scope:Value(nil)
+	self.heartbeat = scope:Value(Config.HEARTBEAT_INTERVAL)
+	self.batchIdleRef = scope:Value(nil)
+	self.scriptDebounceRef = scope:Value(nil)
 
-	self.serviceListRef = Value(nil)
-	self.excludedParentsRef = Value(nil)
-	self.ignoredClassesRef = Value(nil)
+	self.maxHandshakes = scope:Value(Config.MAX_HANDSHAKES)
+	self.maxReconnections = scope:Value(toReconnectionSlider(Config.MAX_RECONNECTIONS))
+	self.reconnectionInterval = scope:Value(Config.RECONNECTION_INTERVAL)
 
-	self.connectButton = ToolbarButton({
-		Toolbar = Toolbar({
+	self.serviceListRef = scope:Value(nil)
+	self.excludedParentsRef = scope:Value(nil)
+	self.ignoredClassesRef = scope:Value(nil)
+
+	self.connectButton = scope:ToolbarButton {
+		Toolbar = scope:Toolbar {
 			Name = "Azul",
-		}),
+		},
 		Name = "Azul",
 		ToolTip = "Open Azul",
 		Image = self.icon,
-		[OnEvent("Click")] = function() self.isOpen:set(not peek(self.isOpen)) end,
-	})
+		[OnEvent "Click"] = function() self.isOpen:set(not peek(self.isOpen)) end,
+	}
 
-	local widget = Widget({
+	local widget = scope:Widget {
 		Name = "Azul",
 		Id = "Azul",
 		MinimumSize = Vector2.new(300, 300),
@@ -306,46 +317,46 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 		InitialEnabled = Config.AUTO_OPEN_MODAL and true or false,
 		Enabled = self.isOpen,
 		[Children] = {
-			Container({
+			scope:Container {
 				Size = UDim2.fromScale(1, 1),
 				AutomaticSize = Enum.AutomaticSize.None,
 				BackgroundColor3 = Theme.Colors.Background,
 				BackgroundTransparency = 0,
 				[Children] = {
-					ScrollingContainer({
+					scope:ScrollingContainer {
 						ScrollBar = true,
 						[Children] = {
-							Padding {
+							scope:Padding {
 								Padding = Theme.WidgetPadding,
 							},
-							List({
+							scope:List {
 								Spacing = Theme.ListSpacing,
-							}),
-							Container({
+							},
+							scope:Container {
 								Size = UDim2.fromScale(1, 0),
 								AutomaticSize = Enum.AutomaticSize.Y,
 								[Children] = {
-									List({
+									scope:List {
 										FillDirection = Enum.FillDirection.Horizontal,
 										HorizontalAlignment = Enum.HorizontalAlignment.Center,
 										VerticalAlignment = Enum.VerticalAlignment.Center,
 										Spacing = 10,
-									}),
-									Image({
+									},
+									scope:Image {
 										Size = UDim2.fromOffset(36, 36),
 										Image = self.icon,
-									}),
-									Text({
+									},
+									scope:Text {
 										Text = "Azul",
 										FontFace = Theme.Fonts.Mono,
 										TextSize = Theme.TextSize.Heading,
 
 										AutomaticSize = Enum.AutomaticSize.XY,
-									}),
+									},
 								},
-							}),
-							TextButton({
-								Text = Computed(function(use)
+							},
+							scope:TextButton {
+								Text = scope:Computed(function(use)
 									if not use(self.syncEnabled) then return "Connect" end
 									if use(self.handshakeComplete) then return "Disconnect" end
 									return "Awaiting Daemon..."
@@ -359,58 +370,58 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										self.callbacks.onStartSync()
 									end
 								end,
-							}),
-							section("Behavior", {
-								labeledToggle("Auto Connect", self.autoConnect, function(newValue)
+							},
+							section(scope, "Behavior", {
+								labeledToggle(scope, "Auto Connect", self.autoConnect, function(newValue)
 									Config.AUTO_CONNECT = newValue
 									if self.callbacks.onAutoConnectChanged then
 										self.callbacks.onAutoConnectChanged(newValue)
 									end
 								end),
-								infoText("Automatically attempts to connect to Daemon."),
-								labeledToggle("Silent Mode", self.silentMode, function(newValue)
+								infoText(scope, "Automatically attempts to connect to Daemon."),
+								labeledToggle(scope, "Silent Mode", self.silentMode, function(newValue)
 									Config.SILENT_MODE = newValue
 									if self.callbacks.onSilentModeChanged then
 										self.callbacks.onSilentModeChanged(newValue)
 									end
 								end),
-								infoText("Suppresses all console output except errors."),
-								labeledToggle("Debug Mode", self.debugMode, function(newValue)
+								infoText(scope, "Suppresses all console output except errors."),
+								labeledToggle(scope, "Debug Mode", self.debugMode, function(newValue)
 									Config.DEBUG_MODE = newValue
 									if self.callbacks.onDebugModeChanged then
 										self.callbacks.onDebugModeChanged(newValue)
 									end
 								end),
-								infoText("Enables verbose logging in the output console."),
-								labeledToggle("Auto Open Modal", self.autoOpenModal, function(newValue)
+								infoText(scope, "Enables verbose logging in the output console."),
+								labeledToggle(scope, "Auto Open Modal", self.autoOpenModal, function(newValue)
 									Config.AUTO_OPEN_MODAL = newValue
 									self.callbacks.onConfigChanged("AUTO_OPEN_MODAL", newValue)
 								end),
-								infoText("Opens the plugin modal when Studio first launches."),
-								Text({
+								infoText(scope, "Opens the plugin modal when Studio first launches."),
+								scope:Text {
 									Text = "Settings Scope",
 									TextSize = Theme.TextSize.Small,
 									Color = Theme.Colors.TextDimmed,
 									AutomaticSize = Enum.AutomaticSize.XY,
-								}),
-								OptionSelector({
+								},
+								scope:OptionSelector {
 									Options = { "Global", "Project" },
 									Value = self.settingsScopeValue,
 									Selected = function(option)
 										local scope = option == "Global" and Enums.scope.GLOBAL or Enums.scope.PROJECT
 										self.callbacks.onSettingsScopeChanged(scope)
 									end,
-								}),
+								},
 							}),
-							section("Connection", {
-								labeledInput("WebSocket URL", self.wsUrlRef, {
+							section(scope, "Connection", {
+								labeledInput(scope, "WebSocket URL", self.wsUrlRef, {
 									Text = Config.WS_URL,
 									Finished = function(text)
 										if text == "" then return end
 										self.callbacks.onConfigChanged("WS_URL", text)
 									end,
 								}),
-								labeledSlider("Heartbeat Interval (seconds)", {
+								labeledSlider(scope, "Heartbeat Interval (seconds)", {
 									Value = self.heartbeat,
 									Min = 5,
 									Max = 120,
@@ -419,7 +430,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										self.callbacks.onConfigChanged("HEARTBEAT_INTERVAL", value)
 									end,
 								}),
-								labeledInput("Batch Idle Window (seconds)", self.batchIdleRef, {
+								labeledInput(scope, "Batch Idle Window (seconds)", self.batchIdleRef, {
 									Text = tostring(Config.BATCH_IDLE_WINDOW),
 									Finished = function(text)
 										if text == "" then return end
@@ -429,7 +440,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										)
 									end,
 								}),
-								labeledInput("Script Change Debounce (seconds)", self.scriptDebounceRef, {
+								labeledInput(scope, "Script Change Debounce (seconds)", self.scriptDebounceRef, {
 									Text = tostring(Config.SCRIPT_CHANGE_DEBOUNCE),
 									Finished = function(text)
 										if text == "" then return end
@@ -442,14 +453,14 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									end,
 								}),
 							}),
-							section("Auto Connect", {
-								labeledSlider("Maximum Handshake Attempts", {
+							section(scope, "Auto Connect", {
+								labeledSlider(scope, "Maximum Handshake Attempts", {
 									Value = self.maxHandshakes,
 									Min = 1,
 									Max = 10,
 									Changed = function(value) self.callbacks.onConfigChanged("MAX_HANDSHAKES", value) end,
 								}),
-								labeledSlider("Maximum Reconnection Attempts", {
+								labeledSlider(scope, "Maximum Reconnection Attempts", {
 									Value = self.maxReconnections,
 									Min = 0,
 									Max = 10,
@@ -461,7 +472,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										)
 									end,
 								}),
-								labeledSlider("Reconnection Interval (seconds)", {
+								labeledSlider(scope, "Reconnection Interval (seconds)", {
 									Value = self.reconnectionInterval,
 									Min = 1,
 									Max = 60,
@@ -470,14 +481,14 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									end,
 								}),
 							}),
-							section("Filters", {
-								Text({
+							section(scope, "Filters", {
+								scope:Text {
 									Text = "List Type",
 									TextSize = Theme.TextSize.Small,
 									Color = Theme.Colors.TextDimmed,
 									AutomaticSize = Enum.AutomaticSize.XY,
-								}),
-								OptionSelector({
+								},
+								scope:OptionSelector {
 									Options = { "Whitelist", "Blacklist" },
 									Value = self.listTypeValue,
 									Selected = function(option)
@@ -487,8 +498,8 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 												or Enums.listType.BLACKLIST
 										)
 									end,
-								}),
-								labeledInput("Service List (comma-separated)", self.serviceListRef, {
+								},
+								labeledInput(scope, "Service List (comma-separated)", self.serviceListRef, {
 									Text = table.concat(Config.SERVICE_LIST, ", "),
 									-- MultiLine = true,
 									BoxSize = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium * 2),
@@ -497,7 +508,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										self.callbacks.onConfigChanged("SERVICE_LIST", items)
 									end,
 								}),
-								labeledInput("Excluded Parents (comma-separated)", self.excludedParentsRef, {
+								labeledInput(scope, "Excluded Parents (comma-separated)", self.excludedParentsRef, {
 									Text = table.concat(Config.EXCLUDED_PARENTS, ", "),
 									-- MultiLine = true,
 									BoxSize = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium * 2),
@@ -506,7 +517,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										self.callbacks.onConfigChanged("EXCLUDED_PARENTS", items)
 									end,
 								}),
-								labeledInput("Ignored ClassNames (comma-separated)", self.ignoredClassesRef, {
+								labeledInput(scope, "Ignored ClassNames (comma-separated)", self.ignoredClassesRef, {
 									Text = table.concat(Config.IGNORED_CLASSES, ", "),
 									BoxSize = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium * 2),
 									Finished = function(text)
@@ -515,55 +526,51 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									end,
 								}),
 							}),
-							section("UI", {
-								labeledToggle("Notifications", self.notifications, function(newValue)
+							section(scope, "UI", {
+								labeledToggle(scope, "Notifications", self.notifications, function(newValue)
 									Config.NOTIFICATIONS = newValue
 									self.callbacks.onConfigChanged("NOTIFICATIONS", newValue)
 								end),
-								infoText("Shows pop-up notifications for important events."),
-								labeledToggle("Notification Sounds", self.notificationSounds, function(newValue)
+								infoText(scope, "Shows pop-up notifications for important events."),
+								labeledToggle(scope, "Notification Sounds", self.notificationSounds, function(newValue)
 									Config.NOTIFICATION_SOUNDS = newValue
 									self.callbacks.onConfigChanged("NOTIFICATION_SOUNDS", newValue)
 								end),
-								infoText("Plays a sound when a notification appears."),
+								infoText(scope, "Plays a sound when a notification appears."),
 							}),
-							section("Tools", {
-								TextButton {
+							section(scope, "Tools", {
+								scope:TextButton {
 									Text = "Reload Sourcemap",
 									Size = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium),
 									Activated = function() self.callbacks.onSourcemapReload() end,
 								},
-								TextButton {
+								scope:TextButton {
 									Text = "Open Place Configuration",
 									Size = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium),
 									Activated = function() helpers.openPlaceConfig() end,
 								},
 							}),
-							Text {
+							scope:Text {
 								Text = `Azul Plugin v{AzulService.VERSION}`,
 								TextSize = Theme.TextSize.Small,
 								Color = Theme.Colors.TextDimmed,
 								AutomaticSize = Enum.AutomaticSize.XY,
 							},
 						},
-					}),
+					},
 				},
-			}),
+			},
 		},
-	})
+	}
 
 	self.azulWidget = widget
 
-	local notificationsGui, notify = Notifications({
+	self.notify = scope:Notifications {
 		Logo = self.icon,
 		SoundParent = widget,
-	})
-	self.notify = notify
-	plugin.Unloading:Once(function() notificationsGui:Destroy() end)
+	}
 
-	plugin.Unloading:Once(
-		Observer(self.isOpen):onChange(function() self.connectButton:SetActive(peek(self.isOpen)) end)
-	)
+	scope:Observer(self.isOpen):onChange(function() self.connectButton:SetActive(peek(self.isOpen)) end)
 
 	self.connectButton:SetActive(peek(self.isOpen))
 

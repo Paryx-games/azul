@@ -23,12 +23,10 @@ local List = require(Components.List)
 local Padding = require(Components.Padding)
 local Text = require(Components.Text)
 
-local New = Fusion.New
-local Value = Fusion.Value
-local Computed = Fusion.Computed
-local Spring = Fusion.Spring
 local Children = Fusion.Children
 local OnEvent = Fusion.OnEvent
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local WIDTH = 320
 local LOGO_SIZE = 32
@@ -37,7 +35,7 @@ local FADE_TIME = 0.4
 local BAR_HEIGHT = 3
 
 type Props = {
-	Logo: Fusion.CanBeState<string>,
+	Logo: Fusion.UsedAs<string>,
 	-- Sounds only play in Edit mode when parented to a plugin widget
 	SoundParent: Instance,
 }
@@ -45,31 +43,41 @@ type Props = {
 export type Notify = (text: string, timeout: number?, playSound: boolean?) -> ()
 
 --[=[
-	Creates the notifications ScreenGui in CoreGui.
-	Returns it along with a function that shows a notification for `timeout` seconds, playing a sound if `playSound` is true.
+	Creates the notifications ScreenGui in CoreGui, owned by `scope`.
+	Returns a function that shows a notification for `timeout` seconds, playing a sound if `playSound` is true.
 ]=]
-return function(props: Props): (Instance, Notify)
-	local holder = New("Frame")({
+return function(outerScope: Scope, props: Props): Notify
+	local scope = outerScope:innerScope {
+		Box = Box,
+		Container = Container,
+		Corner = Corner,
+		Image = Image,
+		List = List,
+		Padding = Padding,
+		Text = Text,
+	}
+
+	local holder = scope:New "Frame" {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		[Children] = {
-			List({
+			scope:List {
 				Spacing = 6,
 				HorizontalAlignment = Enum.HorizontalAlignment.Right,
 				VerticalAlignment = Enum.VerticalAlignment.Bottom,
-			}),
-			Padding({ Padding = 10 }),
-		} :: { Instance },
-	})
+			},
+			scope:Padding { Padding = 10 },
+		},
+	}
 
-	local screenGui = New("ScreenGui")({
+	scope:New "ScreenGui" {
 		Name = "AzulNotifications",
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		ResetOnSpawn = false,
 		DisplayOrder = 100,
 		Parent = CoreGui,
 		[Children] = holder,
-	})
+	}
 
 	local count = 0
 
@@ -77,34 +85,37 @@ return function(props: Props): (Instance, Notify)
 		count += 1
 		local duration = timeout or DEFAULT_TIMEOUT
 
-		local visibility = Value(0)
-		local alpha = Spring(visibility, 15, 1)
-		local transparency = Computed(function(use) return 1 - use(alpha) end)
+		-- Owns everything this toast creates; cleaned up once it has faded out
+		local toastScope = scope:innerScope()
+
+		local visibility = toastScope:Value(0)
+		local alpha = toastScope:Spring(visibility, 15, 1)
+		local transparency = toastScope:Computed(function(use) return 1 - use(alpha) end)
 
 		-- Fraction of the lifetime left; drains while the toast isn't hovered
-		local remaining = Value(1)
+		local remaining = toastScope:Value(1)
 		local timeLeft = duration
 		local hovered = false
 
-		local toast: Instance
-		local countdown: RBXScriptConnection
 		local dismissed = false
 		local function dismiss()
 			if dismissed then return end
 			dismissed = true
-			countdown:Disconnect()
 			visibility:set(0)
-			task.delay(FADE_TIME, function() toast:Destroy() end)
+			task.delay(FADE_TIME, Fusion.doCleanup, toastScope)
 		end
 
-		countdown = RunService.Heartbeat:Connect(function(dt)
-			if hovered then return end
-			timeLeft -= dt
-			remaining:set(math.max(timeLeft / duration, 0))
-			if timeLeft <= 0 then dismiss() end
-		end)
+		table.insert(
+			toastScope,
+			RunService.Heartbeat:Connect(function(dt)
+				if hovered then return end
+				timeLeft -= dt
+				remaining:set(math.max(timeLeft / duration, 0))
+				if timeLeft <= 0 then dismiss() end
+			end)
+		)
 
-		toast = New("TextButton")({
+		toastScope:New "TextButton" {
 			Size = UDim2.fromOffset(WIDTH, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
@@ -112,62 +123,62 @@ return function(props: Props): (Instance, Notify)
 			Text = "",
 			LayoutOrder = count,
 			Parent = holder,
-			[OnEvent("Activated")] = dismiss,
-			[OnEvent("MouseEnter")] = function() hovered = true end,
-			[OnEvent("MouseLeave")] = function() hovered = false end,
-			[Children] = Box({
+			[OnEvent "Activated"] = dismiss,
+			[OnEvent "MouseEnter"] = function() hovered = true end,
+			[OnEvent "MouseLeave"] = function() hovered = false end,
+			[Children] = toastScope:Box {
 				Size = UDim2.fromScale(1, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = transparency,
 				BorderTransparency = transparency,
 				[Children] = {
-					List({ Spacing = 0 }),
-					Container({
+					toastScope:List { Spacing = 0 },
+					toastScope:Container {
 						Size = UDim2.fromScale(1, 0),
 						LayoutOrder = 1,
 						[Children] = {
-							Padding({ Padding = 10 }),
-							List({
+							toastScope:Padding { Padding = 10 },
+							toastScope:List {
 								FillDirection = Enum.FillDirection.Horizontal,
 								VerticalAlignment = Enum.VerticalAlignment.Center,
 								Spacing = 10,
-							}),
-							Image({
+							},
+							toastScope:Image {
 								Size = UDim2.fromOffset(LOGO_SIZE, LOGO_SIZE),
 								Image = props.Logo,
 								ImageTransparency = transparency,
-							}),
-							Text({
+							},
+							toastScope:Text {
 								Text = text,
 								TextSize = Theme.TextSize.Medium,
 								TextWrapped = true,
 								TextTransparency = transparency,
 								Size = UDim2.new(1, -(LOGO_SIZE + 10), 0, 0),
 								AutomaticSize = Enum.AutomaticSize.Y,
-							}),
-						} :: { Instance },
-					}),
+							},
+						},
+					},
 					-- Time-left bar, spanning the bottom edge
-					Container({
+					toastScope:Container {
 						Size = UDim2.new(1, 0, 0, BAR_HEIGHT),
 						AutomaticSize = Enum.AutomaticSize.None,
 						LayoutOrder = 2,
 						BackgroundColor3 = Theme.Colors.Border,
 						BackgroundTransparency = transparency,
 						[Children] = {
-							Corner({ Radius = BAR_HEIGHT }),
-							Container({
-								Size = Computed(function(use) return UDim2.fromScale(use(remaining), 1) end),
+							toastScope:Corner { Radius = BAR_HEIGHT },
+							toastScope:Container {
+								Size = toastScope:Computed(function(use) return UDim2.fromScale(use(remaining), 1) end),
 								AutomaticSize = Enum.AutomaticSize.None,
 								BackgroundColor3 = Theme.Colors.Brand,
 								BackgroundTransparency = transparency,
-								[Children] = Corner({ Radius = BAR_HEIGHT }),
-							}),
-						} :: { Instance },
-					}),
-				} :: { Instance },
-			}),
-		})
+								[Children] = toastScope:Corner { Radius = BAR_HEIGHT },
+							},
+						},
+					},
+				},
+			},
+		}
 
 		visibility:set(1)
 
@@ -180,5 +191,5 @@ return function(props: Props): (Instance, Notify)
 		sound:Play()
 	end
 
-	return screenGui, notify
+	return notify
 end
