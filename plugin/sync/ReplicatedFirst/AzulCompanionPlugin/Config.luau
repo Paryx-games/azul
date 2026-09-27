@@ -38,6 +38,7 @@ configTable = {
 	DEBUG_MODE = false,
 	SILENT_MODE = false,
 	NOTIFICATIONS = true,
+	NOTIFICATION_SOUNDS = true,
 	AUTO_OPEN_MODAL = true,
 }
 

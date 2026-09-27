@@ -76,6 +76,7 @@ type AzulUI = {
 	debugMode: fusion.Value<boolean>,
 	silentMode: fusion.Value<boolean>,
 	notifications: fusion.Value<boolean>,
+	notificationSounds: fusion.Value<boolean>,
 	autoOpenModal: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
@@ -248,6 +249,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.debugMode = Value(Config.DEBUG_MODE)
 	self.silentMode = Value(Config.SILENT_MODE)
 	self.notifications = Value(Config.NOTIFICATIONS)
+	self.notificationSounds = Value(Config.NOTIFICATION_SOUNDS)
 	self.autoOpenModal = Value(Config.AUTO_OPEN_MODAL)
 	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
@@ -507,7 +509,12 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									Config.NOTIFICATIONS = newValue
 									self.callbacks.onConfigChanged("NOTIFICATIONS", newValue)
 								end),
-								infoText("Shows pop-up notifications with sound for important events."),
+								infoText("Shows pop-up notifications for important events."),
+								labeledToggle("Notification Sounds", self.notificationSounds, function(newValue)
+									Config.NOTIFICATION_SOUNDS = newValue
+									self.callbacks.onConfigChanged("NOTIFICATION_SOUNDS", newValue)
+								end),
+								infoText("Plays a sound when a notification appears."),
 							}),
 							section("Tools", {
 								TextButton {
@@ -568,7 +575,7 @@ function UI:UpdateHandshakeState(complete: boolean) self.handshakeComplete:set(c
 ]=]
 function UI:Notify(text: string, timeout: number?)
 	if not Config.NOTIFICATIONS then return end
-	self.notify(text, timeout)
+	self.notify(text, timeout, Config.NOTIFICATION_SOUNDS)
 end
 
 function UI:SetSettingsScope(scope)
@@ -583,6 +590,7 @@ function UI:UpdateConfig()
 	self.debugMode:set(Config.DEBUG_MODE)
 	self.silentMode:set(Config.SILENT_MODE)
 	self.notifications:set(Config.NOTIFICATIONS)
+	self.notificationSounds:set(Config.NOTIFICATION_SOUNDS)
 	self.autoOpenModal:set(Config.AUTO_OPEN_MODAL)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
 	self.listTypeValue:set(if Config.LIST_TYPE == Enums.listType.WHITELIST then "Whitelist" else "Blacklist")

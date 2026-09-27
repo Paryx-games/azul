@@ -42,11 +42,11 @@ type Props = {
 	SoundParent: Instance,
 }
 
-export type Notify = (text: string, timeout: number?) -> ()
+export type Notify = (text: string, timeout: number?, playSound: boolean?) -> ()
 
 --[=[
 	Creates the notifications ScreenGui in CoreGui.
-	Returns it along with a function that shows a notification (and plays a sound) for `timeout` seconds.
+	Returns it along with a function that shows a notification for `timeout` seconds, playing a sound if `playSound` is true.
 ]=]
 return function(props: Props): (ScreenGui, Notify)
 	local holder = New("Frame")({
@@ -73,7 +73,7 @@ return function(props: Props): (ScreenGui, Notify)
 
 	local count = 0
 
-	local function notify(text: string, timeout: number?)
+	local function notify(text: string, timeout: number?, playSound: boolean?)
 		count += 1
 		local duration = timeout or DEFAULT_TIMEOUT
 
@@ -170,6 +170,8 @@ return function(props: Props): (ScreenGui, Notify)
 		})
 
 		visibility:set(1)
+
+		if not playSound then return end
 
 		local sound = New("Sound")({
 			SoundId = Assets.Sounds.Notification,
