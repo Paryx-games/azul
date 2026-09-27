@@ -236,13 +236,13 @@ export class IPCServer {
     }
 
     if (this.outputClients.size === 0) {
-      console.log("==== PLAYTEST OUTPUT ====");
+      log.playtest("started");
     }
     this.outputClients.add(ws);
 
     ws.once("close", () => {
       if (this.outputClients.delete(ws) && this.outputClients.size === 0) {
-        console.log("=========================");
+        log.playtest("ended");
       }
     });
 
