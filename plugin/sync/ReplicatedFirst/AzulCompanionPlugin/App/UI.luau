@@ -26,6 +26,7 @@ local Input = require("./Components/Input")
 local ScrollingContainer = require("./Components/ScrollingContainer")
 local Box = require("./Components/Box")
 local Notifications = require("./Components/Notifications")
+local Slider = require("./Components/Slider")
 
 local Value = fusion.Value
 local Computed = fusion.Computed
@@ -82,13 +83,13 @@ type AzulUI = {
 	listTypeValue: fusion.Value<string>,
 
 	wsUrlRef: fusion.Value<TextBox?>,
-	heartbeatRef: fusion.Value<TextBox?>,
+	heartbeat: fusion.Value<number>,
 	batchIdleRef: fusion.Value<TextBox?>,
 	scriptDebounceRef: fusion.Value<TextBox?>,
 
-	maxHandshakesRef: fusion.Value<TextBox?>,
-	maxReconnectionsRef: fusion.Value<TextBox?>,
-	reconnectionIntervalRef: fusion.Value<TextBox?>,
+	maxHandshakes: fusion.Value<number>,
+	maxReconnections: fusion.Value<number>,
+	reconnectionInterval: fusion.Value<number>,
 
 	serviceListRef: fusion.Value<TextBox?>,
 	excludedParentsRef: fusion.Value<TextBox?>,
@@ -111,7 +112,7 @@ local function debugPrint(...)
 end
 
 --- Utility function to validate number input from TextBoxes. If the number is valid, it calls the provided callback with the number value.
-local function validateNumberInput(newValue: string, callback: (number) -> (), allowNegative: boolean?)
+local function validateNumberInput(newValue: string, callback: (number) -> ())
 	local numberValue = tonumber(newValue)
 
 	if not numberValue then
@@ -119,11 +120,8 @@ local function validateNumberInput(newValue: string, callback: (number) -> (), a
 		return
 	end
 
-	if not allowNegative and numberValue <= 0 then
+	if numberValue <= 0 then
 		warn(`[Azul::{script}]: Number input must be greater than 0: {newValue}`)
-		return
-	elseif numberValue == 0 then
-		warn(`[Azul::{script}]: Number input cannot be 0`)
 		return
 	end
 
@@ -223,6 +221,28 @@ local function labeledInput(label: string, ref: fusion.Value<TextBox?>, props: {
 	})
 end
 
+local function labeledSlider(label: string, props: { [string]: any })
+	return Container({
+		Size = UDim2.fromScale(1, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		[Children] = {
+			List({
+				Spacing = 4,
+			}),
+			Text({
+				Text = label,
+				TextSize = Theme.TextSize.Small,
+				Color = Theme.Colors.TextDimmed,
+				AutomaticSize = Enum.AutomaticSize.XY,
+			}),
+			Slider(props),
+		},
+	})
+end
+
+--- The reconnection slider's minimum (0) stands for infinite attempts, stored in config as -1.
+local function toReconnectionSlider(value: number): number return if value == -1 then 0 else value end
+
 --[=[
 	Initializes the plugin UI, sets up callbacks, and manages sync state
 ]=]
@@ -255,13 +275,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
 	self.wsUrlRef = Value(nil)
-	self.heartbeatRef = Value(nil)
+	self.heartbeat = Value(Config.HEARTBEAT_INTERVAL)
 	self.batchIdleRef = Value(nil)
 	self.scriptDebounceRef = Value(nil)
 
-	self.maxHandshakesRef = Value(nil)
-	self.maxReconnectionsRef = Value(nil)
-	self.reconnectionIntervalRef = Value(nil)
+	self.maxHandshakes = Value(Config.MAX_HANDSHAKES)
+	self.maxReconnections = Value(toReconnectionSlider(Config.MAX_RECONNECTIONS))
+	self.reconnectionInterval = Value(Config.RECONNECTION_INTERVAL)
 
 	self.serviceListRef = Value(nil)
 	self.excludedParentsRef = Value(nil)
@@ -390,14 +410,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										self.callbacks.onConfigChanged("WS_URL", text)
 									end,
 								}),
-								labeledInput("Heartbeat Interval (seconds)", self.heartbeatRef, {
-									Text = tostring(Config.HEARTBEAT_INTERVAL),
-									Finished = function(text)
-										if text == "" then return end
-										validateNumberInput(
-											text,
-											function(value) self.callbacks.onConfigChanged("HEARTBEAT_INTERVAL", value) end
-										)
+								labeledSlider("Heartbeat Interval (seconds)", {
+									Value = self.heartbeat,
+									Min = 5,
+									Max = 120,
+									Step = 5,
+									Changed = function(value)
+										self.callbacks.onConfigChanged("HEARTBEAT_INTERVAL", value)
 									end,
 								}),
 								labeledInput("Batch Idle Window (seconds)", self.batchIdleRef, {
@@ -424,38 +443,30 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 								}),
 							}),
 							section("Auto Connect", {
-								labeledInput("Maximum Handshake Attempts", self.maxHandshakesRef, {
-									Text = tostring(Config.MAX_HANDSHAKES),
-									Finished = function(text)
-										if text == "" then return end
-										validateNumberInput(
-											text,
-											function(value) self.callbacks.onConfigChanged("MAX_HANDSHAKES", value) end
+								labeledSlider("Maximum Handshake Attempts", {
+									Value = self.maxHandshakes,
+									Min = 1,
+									Max = 10,
+									Changed = function(value) self.callbacks.onConfigChanged("MAX_HANDSHAKES", value) end,
+								}),
+								labeledSlider("Maximum Reconnection Attempts", {
+									Value = self.maxReconnections,
+									Min = 0,
+									Max = 10,
+									Format = function(value) return if value == 0 then "∞" else tostring(value) end,
+									Changed = function(value)
+										self.callbacks.onConfigChanged(
+											"MAX_RECONNECTIONS",
+											if value == 0 then -1 else value
 										)
 									end,
 								}),
-								labeledInput("Maximum Reconnection Attempts", self.maxReconnectionsRef, {
-									Text = tostring(Config.MAX_RECONNECTIONS),
-									Placeholder = "-1 for infinite attempts",
-									Finished = function(text)
-										if text == "" then return end
-										validateNumberInput(
-											text,
-											function(value) self.callbacks.onConfigChanged("MAX_RECONNECTIONS", value) end,
-											true
-										)
-									end,
-								}),
-								labeledInput("Reconnection Interval (seconds)", self.reconnectionIntervalRef, {
-									Text = tostring(Config.RECONNECTION_INTERVAL),
-									Finished = function(text)
-										if text == "" then return end
-										validateNumberInput(
-											text,
-											function(value)
-												self.callbacks.onConfigChanged("RECONNECTION_INTERVAL", value)
-											end
-										)
+								labeledSlider("Reconnection Interval (seconds)", {
+									Value = self.reconnectionInterval,
+									Min = 1,
+									Max = 60,
+									Changed = function(value)
+										self.callbacks.onConfigChanged("RECONNECTION_INTERVAL", value)
 									end,
 								}),
 							}),
@@ -598,8 +609,7 @@ function UI:UpdateConfig()
 	local wsUrlInput = peek(self.wsUrlRef)
 	if wsUrlInput then wsUrlInput.Text = Config.WS_URL end
 
-	local heartbeatInput = peek(self.heartbeatRef)
-	if heartbeatInput then heartbeatInput.Text = tostring(Config.HEARTBEAT_INTERVAL) end
+	self.heartbeat:set(Config.HEARTBEAT_INTERVAL)
 
 	local batchIdleInput = peek(self.batchIdleRef)
 	if batchIdleInput then batchIdleInput.Text = tostring(Config.BATCH_IDLE_WINDOW) end
@@ -607,14 +617,9 @@ function UI:UpdateConfig()
 	local scriptDebounceInput = peek(self.scriptDebounceRef)
 	if scriptDebounceInput then scriptDebounceInput.Text = tostring(Config.SCRIPT_CHANGE_DEBOUNCE) end
 
-	local maxConnectionsInput = peek(self.maxHandshakesRef)
-	if maxConnectionsInput then maxConnectionsInput.Text = tostring(Config.MAX_HANDSHAKES) end
-
-	local maxReconnectionsInput = peek(self.maxReconnectionsRef)
-	if maxReconnectionsInput then maxReconnectionsInput.Text = tostring(Config.MAX_RECONNECTIONS) end
-
-	local reconnectionIntervalInput = peek(self.reconnectionIntervalRef)
-	if reconnectionIntervalInput then reconnectionIntervalInput.Text = tostring(Config.RECONNECTION_INTERVAL) end
+	self.maxHandshakes:set(Config.MAX_HANDSHAKES)
+	self.maxReconnections:set(toReconnectionSlider(Config.MAX_RECONNECTIONS))
+	self.reconnectionInterval:set(Config.RECONNECTION_INTERVAL)
 
 	local serviceListInput = peek(self.serviceListRef)
 	if serviceListInput then serviceListInput.Text = table.concat(Config.SERVICE_LIST, ", ") end
