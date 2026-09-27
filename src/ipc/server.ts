@@ -236,6 +236,10 @@ export class IPCServer {
       }
     });
 
+    ws.on("error", (error) => {
+      log.error("WebSocket error:", error);
+    });
+
     ws.on("message", (data) => {
       try {
         const message: unknown = JSON.parse(data.toString());
