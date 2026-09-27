@@ -15,7 +15,6 @@ local Theme = require(App.Theme)
 local animate = require(Util.animate)
 local getState = require(Util.getState)
 local stripProps = require(Util.stripProps)
-local isState = require(Util.isState)
 
 local Box = require(Components.Box)
 local Container = require(Components.Container)
@@ -51,7 +50,7 @@ local COMPONENT_ONLY_PROPS = {
 }
 
 type Props = {
-	Value: Fusion.CanBeState<number>?,
+	Value: Fusion.Value<number>?,
 	Min: number,
 	Max: number,
 	Step: number?,
@@ -66,13 +65,13 @@ type Props = {
 	Creates a slider bound to `props.Value`, snapping to multiples of `props.Step` (default 1) between `Min` and `Max`.
 	Typed values are only held to `Min`, so values above `Max` can still be entered by hand.
 ]=]
-return function(props: Props): Frame
-	local value = if isState(props.Value) then props.Value else Value(props.Value or props.Min)
+return function(props: Props): Instance
+	local value: Fusion.Value<number> = props.Value or Value(props.Min)
 	local min, max, step = props.Min, props.Max, props.Step or 1
-	local format = props.Format or tostring
+	local format: (number) -> string = props.Format or tostring
 
-	local railRef = Value(nil)
-	local boxRef = Value(nil)
+	local railRef: Fusion.Value<GuiObject?> = Value(nil)
+	local boxRef: Fusion.Value<TextBox?> = Value(nil)
 	local isHovered = Value(false)
 	local isDragging = Value(false)
 
@@ -95,27 +94,29 @@ return function(props: Props): Frame
 
 	-- Keeps the box in sync with the value, including changes made by dragging or from outside
 	local function refreshBox()
-		local box = peek(boxRef) :: TextBox?
+		local box = peek(boxRef)
 		if box then box.Text = format(peek(value)) end
 	end
 	Observer(value):onChange(refreshBox)
 
 	local function setFromX(x: number)
-		local rail = peek(railRef) :: GuiObject
+		local rail = peek(railRef)
+		if not rail then return end
 		local fraction = math.clamp((x - rail.AbsolutePosition.X) / rail.AbsoluteSize.X, 0, 1)
 		local stepped = math.clamp(min + math.round(fraction * (max - min) / step) * step, min, max)
 		if stepped ~= peek(value) then value:set(stepped) end
 	end
 
 	local function startDrag(x: number)
-		local rail = peek(railRef) :: GuiObject
+		local rail = peek(railRef)
+		if not rail then return end
 		local startValue = peek(value)
 		isDragging:set(true)
 		setFromX(x)
 
 		-- A full-size overlay keeps receiving mouse input once the cursor leaves the track;
 		-- UserInputService doesn't see input inside plugin widgets
-		local overlay: TextButton
+		local overlay: Instance
 		local function stopDrag()
 			if not peek(isDragging) then return end
 			isDragging:set(false)
@@ -185,7 +186,7 @@ return function(props: Props): Frame
 							refreshBox()
 						end,
 					}),
-				},
+				} :: { Instance },
 			}),
 			-- Track (hit area), inset so the knob centre can reach both ends of the rail
 			New("TextButton")({
@@ -208,7 +209,11 @@ return function(props: Props): Frame
 						AutomaticSize = Enum.AutomaticSize.None,
 						[Ref] = railRef,
 						[Children] = {
-							ticks,
+							Container({
+								Size = UDim2.fromScale(1, 1),
+								AutomaticSize = Enum.AutomaticSize.None,
+								[Children] = ticks,
+							}),
 							-- Rail
 							Container({
 								AnchorPoint = Vector2.new(0, 0.5),
@@ -227,7 +232,7 @@ return function(props: Props): Frame
 										BackgroundTransparency = 0,
 										[Children] = Corner({ Radius = RAIL_HEIGHT }),
 									}),
-								},
+								} :: { Instance },
 							}),
 							-- Knob
 							Container({
@@ -241,8 +246,8 @@ return function(props: Props): Frame
 							}),
 						},
 					}),
-				},
+				} :: { Instance },
 			}),
-		},
+		} :: { Instance },
 	}))(stripProps(props, COMPONENT_ONLY_PROPS))
 end

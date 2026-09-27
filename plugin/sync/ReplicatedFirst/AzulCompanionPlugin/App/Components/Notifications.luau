@@ -48,7 +48,7 @@ export type Notify = (text: string, timeout: number?, playSound: boolean?) -> ()
 	Creates the notifications ScreenGui in CoreGui.
 	Returns it along with a function that shows a notification for `timeout` seconds, playing a sound if `playSound` is true.
 ]=]
-return function(props: Props): (ScreenGui, Notify)
+return function(props: Props): (Instance, Notify)
 	local holder = New("Frame")({
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
@@ -59,7 +59,7 @@ return function(props: Props): (ScreenGui, Notify)
 				VerticalAlignment = Enum.VerticalAlignment.Bottom,
 			}),
 			Padding({ Padding = 10 }),
-		},
+		} :: { Instance },
 	})
 
 	local screenGui = New("ScreenGui")({
@@ -86,7 +86,7 @@ return function(props: Props): (ScreenGui, Notify)
 		local timeLeft = duration
 		local hovered = false
 
-		local toast: TextButton
+		local toast: Instance
 		local countdown: RBXScriptConnection
 		local dismissed = false
 		local function dismiss()
@@ -145,7 +145,7 @@ return function(props: Props): (ScreenGui, Notify)
 								Size = UDim2.new(1, -(LOGO_SIZE + 10), 0, 0),
 								AutomaticSize = Enum.AutomaticSize.Y,
 							}),
-						},
+						} :: { Instance },
 					}),
 					-- Time-left bar, spanning the bottom edge
 					Container({
@@ -163,9 +163,9 @@ return function(props: Props): (ScreenGui, Notify)
 								BackgroundTransparency = transparency,
 								[Children] = Corner({ Radius = BAR_HEIGHT }),
 							}),
-						},
+						} :: { Instance },
 					}),
-				},
+				} :: { Instance },
 			}),
 		})
 
@@ -173,10 +173,9 @@ return function(props: Props): (ScreenGui, Notify)
 
 		if not playSound then return end
 
-		local sound = New("Sound")({
-			SoundId = Assets.Sounds.Notification,
-			Parent = props.SoundParent,
-		}) :: Sound
+		local sound = Instance.new("Sound")
+		sound.SoundId = Assets.Sounds.Notification
+		sound.Parent = props.SoundParent
 		sound.Ended:Once(function() sound:Destroy() end)
 		sound:Play()
 	end
