@@ -37,6 +37,7 @@ configTable = {
 	AUTO_CONNECT = false,
 	DEBUG_MODE = false,
 	SILENT_MODE = false,
+	NOTIFICATIONS = true,
 	AUTO_OPEN_MODAL = true,
 }
 

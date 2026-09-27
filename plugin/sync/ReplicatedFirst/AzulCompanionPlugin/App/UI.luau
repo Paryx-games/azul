@@ -25,6 +25,7 @@ local OptionSelector = require("./Components/OptionSelector")
 local Input = require("./Components/Input")
 local ScrollingContainer = require("./Components/ScrollingContainer")
 local Box = require("./Components/Box")
+local Notifications = require("./Components/Notifications")
 
 local Value = fusion.Value
 local Computed = fusion.Computed
@@ -64,6 +65,7 @@ type AzulUI = {
 	isSyncEnabled: boolean,
 
 	azulWidget: DockWidgetPluginGui,
+	notify: Notifications.Notify,
 	connectButton: PluginToolbarButton,
 
 	icon: fusion.Value<string>,
@@ -73,6 +75,7 @@ type AzulUI = {
 	autoConnect: fusion.Value<boolean>,
 	debugMode: fusion.Value<boolean>,
 	silentMode: fusion.Value<boolean>,
+	notifications: fusion.Value<boolean>,
 	autoOpenModal: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
@@ -95,6 +98,7 @@ type AzulUI = {
 	UpdateHandshakeState: (AzulUI, boolean) -> (),
 	UpdateConfig: (AzulUI) -> (),
 	SetSettingsScope: (AzulUI, any) -> (),
+	Notify: (AzulUI, string, number?) -> (),
 }
 
 UI.logo = "rbxassetid://134336592598474"
@@ -243,6 +247,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.autoConnect = Value(Config.AUTO_CONNECT)
 	self.debugMode = Value(Config.DEBUG_MODE)
 	self.silentMode = Value(Config.SILENT_MODE)
+	self.notifications = Value(Config.NOTIFICATIONS)
 	self.autoOpenModal = Value(Config.AUTO_OPEN_MODAL)
 	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
@@ -497,6 +502,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									end,
 								}),
 							}),
+							section("UI", {
+								labeledToggle("Notifications", self.notifications, function(newValue)
+									Config.NOTIFICATIONS = newValue
+									self.callbacks.onConfigChanged("NOTIFICATIONS", newValue)
+								end),
+								infoText("Shows pop-up notifications with sound for important events."),
+							}),
 							section("Tools", {
 								TextButton {
 									Text = "Reload Sourcemap",
@@ -524,6 +536,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 
 	self.azulWidget = widget
 
+	local notificationsGui, notify = Notifications({
+		Logo = self.icon,
+		SoundParent = widget,
+	})
+	self.notify = notify
+	plugin.Unloading:Once(function() notificationsGui:Destroy() end)
+
 	plugin.Unloading:Once(
 		Observer(self.isOpen):onChange(function() self.connectButton:SetActive(peek(self.isOpen)) end)
 	)
@@ -544,6 +563,14 @@ end
 
 function UI:UpdateHandshakeState(complete: boolean) self.handshakeComplete:set(complete) end
 
+--[=[
+	Shows a pop-up notification for `timeout` seconds, unless notifications are disabled.
+]=]
+function UI:Notify(text: string, timeout: number?)
+	if not Config.NOTIFICATIONS then return end
+	self.notify(text, timeout)
+end
+
 function UI:SetSettingsScope(scope)
 	self.settingsScope = scope
 	self.settingsScopeValue:set(if scope == Enums.scope.GLOBAL then "Global" else "Project")
@@ -555,6 +582,7 @@ function UI:UpdateConfig()
 	self.autoConnect:set(Config.AUTO_CONNECT)
 	self.debugMode:set(Config.DEBUG_MODE)
 	self.silentMode:set(Config.SILENT_MODE)
+	self.notifications:set(Config.NOTIFICATIONS)
 	self.autoOpenModal:set(Config.AUTO_OPEN_MODAL)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
 	self.listTypeValue:set(if Config.LIST_TYPE == Enums.listType.WHITELIST then "Whitelist" else "Blacklist")
