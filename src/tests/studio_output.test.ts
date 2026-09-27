@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createServer } from "node:http";
+import { createServer, type Server } from "node:http";
 import { WebSocket } from "ws";
 import { IPCServer } from "../ipc/server.js";
 import { StudioOutputFormatter } from "../studioOutput.js";
@@ -67,7 +67,11 @@ test("colors warnings without changing unresolved Studio locations", () => {
   );
 });
 
-test("accepts playtest output without replacing the Studio connection", async () => {
+async function startServer(): Promise<{
+  httpServer: Server;
+  ipcServer: IPCServer;
+  url: string;
+}> {
   const httpServer = createServer();
   await new Promise<void>((resolve) => httpServer.listen(0, resolve));
   const address = httpServer.address();
@@ -76,40 +80,61 @@ test("accepts playtest output without replacing the Studio connection", async ()
   const ipcServer = new IPCServer(undefined, httpServer, {
     requestSnapshotOnConnect: false,
   });
-  ipcServer.setOutputSessionId("test-session");
-  const studioClient = new WebSocket(`ws://127.0.0.1:${address.port}`);
+  return { httpServer, ipcServer, url: `ws://127.0.0.1:${address.port}` };
+}
+
+async function stopServer(httpServer: Server, ipcServer: IPCServer) {
+  await ipcServer.close();
+  await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+}
+
+test("accepts playtest output without replacing the Studio connection", async () => {
+  const { httpServer, ipcServer, url } = await startServer();
+  const studioClient = new WebSocket(url);
 
   try {
     await waitForOpen(studioClient);
 
-    const receivedOutput = new Promise<void>((resolve) => {
+    const receivedOutput = new Promise<string>((resolve) => {
       ipcServer.onMessage((message) => {
         if (message.type === "studioOutput" && message.source === "server") {
-          resolve();
+          resolve(message.message);
         }
       });
     });
-    const outputClient = new WebSocket(
-      `ws://127.0.0.1:${address.port}/studio-output?sessionId=test-session`,
-    );
+    const outputClient = new WebSocket(`${url}/studio-output`);
     await waitForOpen(outputClient);
     outputClient.send(
       JSON.stringify({
         type: "studioOutput",
-        sessionId: "test-session",
-        message: "server output",
+        message: "server\x1b[2J output",
         messageType: "MessageOutput",
         source: "server",
       }),
     );
 
-    await receivedOutput;
+    assert.equal(await receivedOutput, "server[2J output");
     assert.equal(ipcServer.isConnected(), true);
     assert.equal(ipcServer.send({ type: "pong" }), true);
     outputClient.close();
   } finally {
     studioClient.close();
-    await ipcServer.close();
-    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    await stopServer(httpServer, ipcServer);
+  }
+});
+
+test("rejects playtest output while Studio is not connected", async () => {
+  const { httpServer, ipcServer, url } = await startServer();
+
+  try {
+    const outputClient = new WebSocket(`${url}/studio-output`);
+    const closed = new Promise<void>((resolve) => {
+      outputClient.once("close", () => resolve());
+      outputClient.once("error", () => resolve());
+    });
+    await closed;
+    assert.equal(ipcServer.isConnected(), false);
+  } finally {
+    await stopServer(httpServer, ipcServer);
   }
 });

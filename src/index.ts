@@ -29,7 +29,6 @@ export class SyncDaemon {
   private fileWatcher: FileWatcher;
   private sourcemapGenerator: SourcemapGenerator;
   private studioOutputFormatter: StudioOutputFormatter;
-  private studioOutputSessionId: string | null = null;
   private batchDepth = 0; // Tracks nested batch processing
   private batchNeedsSourcemapRegen = false; // Defer regen until batch ends
   private stopPromise: Promise<void> | null = null;
@@ -72,7 +71,7 @@ export class SyncDaemon {
     });
 
     this.setupHandlers();
-    this.httpServer.listen(config.port, "127.0.0.1");
+    this.httpServer.listen(config.port);
   }
 
   /**
@@ -146,35 +145,13 @@ export class SyncDaemon {
         this.handleDeleted(message.data);
         break;
 
-      case "studioOutputStart":
-        if (typeof message.sessionId !== "string" || !message.sessionId) {
-          break;
-        }
-        this.studioOutputSessionId = message.sessionId;
-        this.ipc.setOutputSessionId(message.sessionId);
-        console.log("==== STUDIO OUTPUT ====");
-        break;
-
       case "studioOutput":
-        if (
-          this.studioOutputSessionId &&
-          message.sessionId === this.studioOutputSessionId
-        ) {
-          console.log(
-            this.studioOutputFormatter.format(
-              message.message,
-              message.messageType,
-            ),
-          );
-        }
-        break;
-
-      case "studioOutputEnd":
-        if (message.sessionId === this.studioOutputSessionId) {
-          console.log("=======================");
-          this.studioOutputSessionId = null;
-          this.ipc.setOutputSessionId(null);
-        }
+        console.log(
+          this.studioOutputFormatter.format(
+            message.message,
+            message.messageType,
+          ),
+        );
         break;
 
       case "ping":

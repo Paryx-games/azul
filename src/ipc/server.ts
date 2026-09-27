@@ -1,6 +1,10 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { log } from "../util/log.js";
-import type { StudioMessage, DaemonMessage } from "./messages.js";
+import type {
+  StudioMessage,
+  DaemonMessage,
+  StudioOutputMessage,
+} from "./messages.js";
 import type { SnapshotRequestOptions } from "./messages.js";
 import type { Server as HttpServer } from "http";
 import {
@@ -9,6 +13,18 @@ import {
 } from "../util/versionUtils.js";
 
 const DAEMON_VERSION = getCurrentVersion();
+
+function isStudioOutputMessage(value: unknown): value is StudioOutputMessage {
+  const message = value as Partial<StudioOutputMessage> | null;
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    message.type === "studioOutput" &&
+    typeof message.message === "string" &&
+    typeof message.messageType === "string" &&
+    (message.source === "server" || message.source === "client")
+  );
+}
 
 export type MessageHandler = (message: StudioMessage) => void;
 
@@ -25,7 +41,6 @@ export class IPCServer {
   private requestSnapshotOnConnect: boolean;
   private pingIntervals = new Map<WebSocket, NodeJS.Timeout>();
   private outputClients = new Set<WebSocket>();
-  private outputSessionId: string | null = null;
   private closePromise: Promise<void> | null = null;
   private handshakeComplete = false;
 
@@ -51,47 +66,8 @@ export class IPCServer {
 
   private setupServer(): void {
     this.wss.on("connection", (ws, request) => {
-      const outputUrl = new URL(request.url ?? "/", "http://localhost");
-      if (outputUrl.pathname === "/studio-output") {
-        if (
-          !this.outputSessionId ||
-          outputUrl.searchParams.get("sessionId") !== this.outputSessionId
-        ) {
-          ws.terminate();
-          return;
-        }
-
-        this.outputClients.add(ws);
-        ws.once("close", () => this.outputClients.delete(ws));
-        ws.on("message", (data) => {
-          try {
-            const message: unknown = JSON.parse(data.toString());
-            if (
-              typeof message === "object" &&
-              message !== null &&
-              "type" in message &&
-              message.type === "studioOutput" &&
-              "sessionId" in message &&
-              message.sessionId === this.outputSessionId &&
-              "message" in message &&
-              typeof message.message === "string" &&
-              "messageType" in message &&
-              typeof message.messageType === "string" &&
-              (!("source" in message) ||
-                message.source === "studio" ||
-                message.source === "server" ||
-                message.source === "client") &&
-              this.messageHandler
-            ) {
-              this.messageHandler({
-                ...message,
-                message: message.message.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, ""),
-              } as StudioMessage);
-            }
-          } catch (error) {
-            log.error("Failed to parse Studio output message:", error);
-          }
-        });
+      if (new URL(request.url ?? "/", "http://localhost").pathname === "/studio-output") {
+        this.handleOutputConnection(ws);
         return;
       }
 
@@ -140,7 +116,7 @@ export class IPCServer {
         log.info("Studio client disconnected");
         this.client = null;
         this.handshakeComplete = false;
-        this.setOutputSessionId(null);
+        this.closeOutputClients();
       });
 
       ws.on("error", (error) => {
@@ -245,16 +221,48 @@ export class IPCServer {
     }
   }
 
-  public setOutputSessionId(sessionId: string | null): void {
-    if (this.outputSessionId === sessionId) {
+  /**
+   * Accept a playtest output relay socket while the main Studio client is connected.
+   * Relays are auxiliary: they never replace or affect the main sync connection.
+   */
+  private handleOutputConnection(ws: WebSocket): void {
+    if (!this.client) {
+      ws.terminate();
       return;
     }
 
-    this.outputSessionId = sessionId;
+    if (this.outputClients.size === 0) {
+      console.log("==== PLAYTEST OUTPUT ====");
+    }
+    this.outputClients.add(ws);
+
+    ws.once("close", () => {
+      if (this.outputClients.delete(ws) && this.outputClients.size === 0) {
+        console.log("=========================");
+      }
+    });
+
+    ws.on("message", (data) => {
+      try {
+        const message: unknown = JSON.parse(data.toString());
+        if (isStudioOutputMessage(message) && this.messageHandler) {
+          this.messageHandler({
+            ...message,
+            // Strip control characters so relayed text can't inject terminal escapes
+            message: message.message.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, ""),
+          });
+        }
+      } catch (error) {
+        log.error("Failed to parse playtest output message:", error);
+      }
+    });
+  }
+
+  /** Terminate every output relay; their close handlers remove them from the set. */
+  private closeOutputClients(): void {
     for (const client of this.outputClients) {
       client.terminate();
     }
-    this.outputClients.clear();
   }
 
   /**
@@ -381,10 +389,7 @@ export class IPCServer {
       this.client.terminate();
       this.client = null;
     }
-    for (const client of this.outputClients) {
-      client.terminate();
-    }
-    this.outputClients.clear();
+    this.closeOutputClients();
 
     this.closePromise = new Promise((resolve) => {
       this.wss.close(() => {
