@@ -71,7 +71,9 @@ function OutputRelay.start(wsUrl: string)
 
 		if isOpen then
 			send(encoded)
-		elseif #pending < MAX_PENDING_MESSAGES then
+		else
+			-- Keep the most recent output: remove the oldest once the buffer is full
+			if #pending >= MAX_PENDING_MESSAGES then table.remove(pending, 1) end
 			table.insert(pending, encoded)
 		end
 	end
