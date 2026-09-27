@@ -29,7 +29,10 @@ function OutputRelay.start(wsUrl: string)
 			})
 		end
 	)
-	if not ok then return end
+	if not ok then
+		warn(`[Azul]: Playtest output relay could not connect to {url}: {result}`)
+		return
+	end
 
 	local client = result :: WebStreamClient
 	local source = if RunService:IsServer() then "server" else "client"
@@ -84,7 +87,11 @@ function OutputRelay.start(wsUrl: string)
 
 	client.Opened:Connect(flush)
 	client.Closed:Connect(stop)
-	client.Error:Connect(stop)
+	client.Error:Connect(function(statusCode: number, errorMessage: string)
+		if not messageConnection.Connected then return end
+		stop() -- Disconnects the log listener first so this warning isn't relayed
+		warn(`[Azul]: Playtest output relay stopped ({statusCode}): {errorMessage}`)
+	end)
 	if client.ConnectionState == Enum.WebStreamClientState.Open then flush() end
 end
 
