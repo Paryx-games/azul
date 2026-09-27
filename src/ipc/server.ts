@@ -65,6 +65,7 @@ export class IPCServer {
       // Disconnect previous client if exists
       if (this.client) {
         log.warn("Disconnecting previous client");
+        this.closeOutputClients();
         this.client.close();
       }
 
