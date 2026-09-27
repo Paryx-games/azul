@@ -1,10 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { log } from "../util/log.js";
-import type {
-  StudioMessage,
-  DaemonMessage,
-  StudioOutputMessage,
-} from "./messages.js";
+import type { StudioMessage, DaemonMessage } from "./messages.js";
+import { isStudioOutputMessage } from "../studioOutput.js";
 import type { SnapshotRequestOptions } from "./messages.js";
 import type { Server as HttpServer } from "http";
 import {
@@ -13,19 +10,6 @@ import {
 } from "../util/versionUtils.js";
 
 const DAEMON_VERSION = getCurrentVersion();
-
-function isStudioOutputMessage(value: unknown): value is StudioOutputMessage {
-  const message = value as Partial<StudioOutputMessage> | null;
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    message.type === "studioOutput" &&
-    typeof message.message === "string" &&
-    typeof message.messageType === "string" &&
-    typeof message.timestamp === "number" &&
-    (message.source === "server" || message.source === "client")
-  );
-}
 
 export type MessageHandler = (message: StudioMessage) => void;
 
@@ -250,14 +234,7 @@ export class IPCServer {
       try {
         const message: unknown = JSON.parse(data.toString());
         if (isStudioOutputMessage(message) && this.messageHandler) {
-          this.messageHandler({
-            ...message,
-            // Strip control characters so relayed text can't inject terminal escapes
-            message: message.message.replace(
-              /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g,
-              "",
-            ),
-          });
+          this.messageHandler(message);
         }
       } catch (error) {
         log.error("Failed to parse playtest output message:", error);

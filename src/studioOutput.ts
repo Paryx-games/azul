@@ -20,6 +20,22 @@ const colors = {
   red: "\x1b[31m",
 };
 
+/** Checks the shape of a relayed playtest output message from either Studio route. */
+export function isStudioOutputMessage(
+  value: unknown,
+): value is StudioOutputMessage {
+  const message = value as Partial<StudioOutputMessage> | null;
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    message.type === "studioOutput" &&
+    typeof message.message === "string" &&
+    typeof message.messageType === "string" &&
+    typeof message.timestamp === "number" &&
+    (message.source === "server" || message.source === "client")
+  );
+}
+
 /** Local wall-clock time as `HH:MM:SS.mmm`. */
 function formatTime(date: Date): string {
   const pad = (value: number, length = 2) =>
@@ -43,7 +59,10 @@ export class StudioOutputFormatter {
   public format(output: StudioOutputMessage): string {
     const time = formatTime(new Date(output.timestamp));
     const source = output.source === "server" ? "Server" : "Client";
-    const message = this.rewriteSourceLocations(output.message);
+    // Strip control characters so relayed text can't inject terminal escapes
+    const message = this.rewriteSourceLocations(
+      output.message.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, ""),
+    );
     const color = this.getColor(output.messageType);
     const body = color ? `${color}${message}${colors.reset}` : message;
     return `${colors.dim}  ${time}${colors.reset}  ${body}  ${colors.dim}-  ${source}${colors.reset}`;

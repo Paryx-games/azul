@@ -6,7 +6,10 @@ import test from "node:test";
 import { createServer, type Server } from "node:http";
 import { WebSocket } from "ws";
 import { IPCServer } from "../ipc/server.js";
-import { StudioOutputFormatter } from "../studioOutput.js";
+import {
+  StudioOutputFormatter,
+  isStudioOutputMessage,
+} from "../studioOutput.js";
 import type { StudioOutputMessage } from "../ipc/messages.js";
 
 function waitForOpen(webSocket: WebSocket): Promise<void> {
@@ -89,6 +92,22 @@ test("colors warnings without changing unresolved Studio locations", () => {
   );
 });
 
+test("strips control characters from relayed messages", () => {
+  const formatter = new StudioOutputFormatter("missing-sourcemap.json");
+  assert.equal(
+    formatter.format(output("server\x1b[2J output", "MessageOutput")),
+    `${DIM}  00:16:28.796${RESET}  server[2J output  ${DIM}-  Server${RESET}`,
+  );
+});
+
+test("rejects malformed output messages", () => {
+  assert.equal(isStudioOutputMessage(output("ok", "MessageOutput")), true);
+  assert.equal(
+    isStudioOutputMessage({ type: "studioOutput", message: 42 }),
+    false,
+  );
+});
+
 async function startServer(): Promise<{
   httpServer: Server;
   ipcServer: IPCServer;
@@ -129,14 +148,14 @@ test("accepts playtest output without replacing the Studio connection", async ()
     outputClient.send(
       JSON.stringify({
         type: "studioOutput",
-        message: "server\x1b[2J output",
+        message: "server output",
         messageType: "MessageOutput",
         source: "server",
         timestamp: Date.now(),
       }),
     );
 
-    assert.equal(await receivedOutput, "server[2J output");
+    assert.equal(await receivedOutput, "server output");
     assert.equal(ipcServer.isConnected(), true);
     assert.equal(ipcServer.send({ type: "pong" }), true);
     outputClient.close();

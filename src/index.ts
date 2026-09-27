@@ -16,7 +16,10 @@ import {
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
-import { StudioOutputFormatter } from "./studioOutput.js";
+import {
+  StudioOutputFormatter,
+  isStudioOutputMessage,
+} from "./studioOutput.js";
 
 /**
  * Main orchestrator for the Azul daemon
@@ -146,7 +149,10 @@ export class SyncDaemon {
         break;
 
       case "studioOutput":
-        console.log(this.studioOutputFormatter.format(message));
+        // Also reachable from the main Studio route, so validate like /studio-output does
+        if (isStudioOutputMessage(message)) {
+          console.log(this.studioOutputFormatter.format(message));
+        }
         break;
 
       case "ping":
