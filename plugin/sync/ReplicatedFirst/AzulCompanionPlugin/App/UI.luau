@@ -84,6 +84,7 @@ type AzulUI = {
 	notifications: fusion.Value<boolean>,
 	notificationSounds: fusion.Value<boolean>,
 	autoOpenModal: fusion.Value<boolean>,
+	syncReminders: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
 
@@ -105,7 +106,7 @@ type AzulUI = {
 	UpdateHandshakeState: (AzulUI, boolean) -> (),
 	UpdateConfig: (AzulUI) -> (),
 	SetSettingsScope: (AzulUI, any) -> (),
-	Notify: (AzulUI, string, number?) -> (),
+	Notify: (AzulUI, string, number?, { Notifications.Action }?) -> (),
 }
 
 UI.logo = "rbxassetid://134336592598474"
@@ -282,6 +283,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.notifications = scope:Value(Config.NOTIFICATIONS)
 	self.notificationSounds = scope:Value(Config.NOTIFICATION_SOUNDS)
 	self.autoOpenModal = scope:Value(Config.AUTO_OPEN_MODAL)
+	self.syncReminders = scope:Value(Config.SYNC_REMINDERS)
 	self.settingsScopeValue = scope:Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = scope:Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
@@ -537,6 +539,11 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									self.callbacks.onConfigChanged("NOTIFICATION_SOUNDS", newValue)
 								end),
 								infoText(scope, "Plays a sound when a notification appears."),
+								labeledToggle(scope, "Sync Reminders", self.syncReminders, function(newValue)
+									Config.SYNC_REMINDERS = newValue
+									self.callbacks.onConfigChanged("SYNC_REMINDERS", newValue)
+								end),
+								infoText(scope, "Reminds you to sync when opening a previously synced Place."),
 							}),
 							section(scope, "Tools", {
 								scope:TextButton {
@@ -589,11 +596,11 @@ end
 function UI:UpdateHandshakeState(complete: boolean) self.handshakeComplete:set(complete) end
 
 --[=[
-	Shows a pop-up notification for `timeout` seconds, unless notifications are disabled.
+	Shows a pop-up notification for `timeout` seconds with optional `actions` buttons, unless notifications are disabled.
 ]=]
-function UI:Notify(text: string, timeout: number?)
+function UI:Notify(text: string, timeout: number?, actions: { Notifications.Action }?)
 	if not Config.NOTIFICATIONS then return end
-	self.notify(text, timeout, Config.NOTIFICATION_SOUNDS)
+	self.notify(text, timeout, Config.NOTIFICATION_SOUNDS, actions)
 end
 
 function UI:SetSettingsScope(scope)
@@ -610,6 +617,7 @@ function UI:UpdateConfig()
 	self.notifications:set(Config.NOTIFICATIONS)
 	self.notificationSounds:set(Config.NOTIFICATION_SOUNDS)
 	self.autoOpenModal:set(Config.AUTO_OPEN_MODAL)
+	self.syncReminders:set(Config.SYNC_REMINDERS)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
 	self.listTypeValue:set(if Config.LIST_TYPE == Enums.listType.WHITELIST then "Whitelist" else "Blacklist")
 
