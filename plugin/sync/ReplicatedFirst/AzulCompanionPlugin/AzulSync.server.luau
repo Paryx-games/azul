@@ -137,10 +137,37 @@ plugin.Unloading:Connect(function()
 	session:stopSync()
 end)
 
+--- Formats a duration in seconds as e.g. "3 days".
+local function formatDuration(seconds: number): string
+	const units: { { seconds: number, name: string } } = {
+		{ seconds = 86400, name = "day" },
+		{ seconds = 3600, name = "hour" },
+		{ seconds = 60, name = "minute" },
+	}
+	for _, unit in units do
+		local count = seconds // unit.seconds
+		if count >= 1 then return `{count} {unit.name}{if count == 1 then "" else "s"}` end
+	end
+	return "less than a minute"
+end
+
 if Config.AUTO_CONNECT then
 	session:startAutoConnect()
 else
 	session:infoPrint("Plugin loaded. Click on the 'Azul' button to connect.")
+
+	-- Remind to sync Places that were synced before
+	local lastSynced = settingsStore:getLastSynced()
+	if lastSynced and Config.SYNC_REMINDERS then
+		newAzulUI:Notify(
+			`You synced this Place with Azul {formatDuration(os.time() - lastSynced)} ago. Connect again?`,
+			15,
+			{
+				{ Text = "Connect", Activated = uiCallbacks.onStartSync },
+				{ Text = "Forget", Activated = function() settingsStore:forgetPlace() end },
+			}
+		)
+	end
 end
 
 session:debugPrint("Debug mode is enabled!")
