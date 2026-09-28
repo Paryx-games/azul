@@ -65,6 +65,7 @@ export type SyncSession = {
 	rebuildServiceSet: (self: SyncSession) -> (),
 	startAutoConnect: (self: SyncSession) -> (),
 	stopAutoConnect: (self: SyncSession) -> (),
+	markPlaceSynced: (self: SyncSession) -> (),
 
 	-- Auto-connect helpers
 	_autoConnectThread: thread?,
@@ -604,6 +605,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		if not self.handshakeComplete then
 			self.handshakeComplete = true
 			self:debugPrint("Handshake implicitly satisfied by daemon message")
+			self.settingsStore:markPlaceSynced()
 			if self.ui then self.ui:UpdateHandshakeState(true) end
 			if self._handshakeBindable then pcall(function() self._handshakeBindable:Fire() end) end
 		end
@@ -962,6 +964,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				self:infoPrint("Handshake with Daemon successful")
 				self:notify(`Connected to Daemon at {self.config.WS_URL}`)
 				sendDaemonConfig()
+				self.settingsStore:markPlaceSynced()
 				if self.ui then self.ui:UpdateHandshakeState(true) end
 				if self._handshakeBindable then pcall(function() self._handshakeBindable:Fire() end) end
 			end

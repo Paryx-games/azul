@@ -22,6 +22,7 @@ local Image = require(Components.Image)
 local List = require(Components.List)
 local Padding = require(Components.Padding)
 local Text = require(Components.Text)
+local TextButton = require(Components.TextButton)
 
 local Children = Fusion.Children
 local OnEvent = Fusion.OnEvent
@@ -40,11 +41,43 @@ type Props = {
 	SoundParent: Instance,
 }
 
-export type Notify = (text: string, timeout: number?, playSound: boolean?) -> ()
+--- A button under the notification text. Clicking it dismisses the notification, then runs `Activated`.
+export type Action = {
+	Text: string,
+	Activated: () -> (),
+}
+
+export type Notify = (text: string, timeout: number?, playSound: boolean?, actions: { Action }?) -> ()
+
+--- Builds one button per action, the first one solid. Buttons fade with the toast.
+local function actionButtons(
+	scope: Scope,
+	actions: { Action },
+	transparency: Fusion.UsedAs<number>,
+	dismiss: () -> ()
+): { Instance }
+	local buttons: { Instance } = {}
+	for i, action in actions do
+		buttons[i] = TextButton(scope, {
+			Text = action.Text,
+			TextSize = Theme.TextSize.Medium,
+			Solid = i == 1,
+			LayoutOrder = i,
+			BackgroundTransparency = transparency,
+			TextTransparency = transparency,
+			Activated = function()
+				dismiss()
+				action.Activated()
+			end,
+		})
+	end
+	return buttons
+end
 
 --[=[
 	Creates the notifications ScreenGui in CoreGui, owned by `scope`.
-	Returns a function that shows a notification for `timeout` seconds, playing a sound if `playSound` is true.
+	Returns a function that shows a notification for `timeout` seconds, playing a sound if `playSound` is true
+	and showing a button for each of `actions`.
 ]=]
 return function(outerScope: Scope, props: Props): Notify
 	local scope = outerScope:innerScope {
@@ -81,7 +114,7 @@ return function(outerScope: Scope, props: Props): Notify
 
 	local count = 0
 
-	local function notify(text: string, timeout: number?, playSound: boolean?)
+	local function notify(text: string, timeout: number?, playSound: boolean?, actions: { Action }?)
 		count += 1
 		local duration = timeout or DEFAULT_TIMEOUT
 
@@ -158,11 +191,26 @@ return function(outerScope: Scope, props: Props): Notify
 							},
 						},
 					},
+					if actions
+						then toastScope:Container {
+							Size = UDim2.fromScale(1, 0),
+							LayoutOrder = 2,
+							[Children] = {
+								toastScope:Padding { Padding = 10, Top = 0 },
+								toastScope:List {
+									FillDirection = Enum.FillDirection.Horizontal,
+									HorizontalAlignment = Enum.HorizontalAlignment.Right,
+									Spacing = 6,
+								},
+								actionButtons(toastScope, actions, transparency, dismiss),
+							},
+						}
+						else nil,
 					-- Time-left bar, spanning the bottom edge
 					toastScope:Container {
 						Size = UDim2.new(1, 0, 0, BAR_HEIGHT),
 						AutomaticSize = Enum.AutomaticSize.None,
-						LayoutOrder = 2,
+						LayoutOrder = 3,
 						BackgroundColor3 = Theme.Colors.Border,
 						BackgroundTransparency = transparency,
 						[Children] = {
