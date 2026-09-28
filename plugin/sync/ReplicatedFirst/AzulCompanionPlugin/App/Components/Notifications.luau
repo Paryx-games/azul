@@ -54,7 +54,7 @@ local function actionButtons(
 	scope: Scope,
 	actions: { Action },
 	transparency: Fusion.UsedAs<number>,
-	dismiss: () -> ()
+	dismiss: () -> boolean
 ): { Instance }
 	local buttons: { Instance } = {}
 	for i, action in actions do
@@ -66,8 +66,7 @@ local function actionButtons(
 			BackgroundTransparency = transparency,
 			TextTransparency = transparency,
 			Activated = function()
-				dismiss()
-				action.Activated()
+				if dismiss() then action.Activated() end
 			end,
 		})
 	end
@@ -130,12 +129,14 @@ return function(outerScope: Scope, props: Props): Notify
 		local timeLeft = duration
 		local hovered = false
 
+		-- Starts the fade-out; returns true only on the first call
 		local dismissed = false
-		local function dismiss()
-			if dismissed then return end
+		local function dismiss(): boolean
+			if dismissed then return false end
 			dismissed = true
 			visibility:set(0)
 			task.delay(FADE_TIME, Fusion.doCleanup, toastScope)
+			return true
 		end
 
 		table.insert(
